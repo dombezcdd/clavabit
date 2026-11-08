@@ -86,8 +86,12 @@ HELP_TEXT = (
     "!ссылка на NFT (t.me/nft/...) — карточка и анимация NFT; также «гиф ссылка»\n"
     "/dice — кости против другого (ответом), /slots, /coin\n"
     "/quiztop — рейтинг викторины\n"
-    "РП: обнять, ударить, погладить, дать пять, пожать руку, укусить, "
-    "обнять крепко, пнуть (ответом на сообщение)\n"
+    "РП (ответом на сообщение, с гифкой): обнять, обнять крепко, поцеловать, погладить, "
+    "дать пять, пожать руку, взять за руку, пощекотать, ткнуть, покормить, помахать, "
+    "похвалить, ударить, пнуть, укусить, отшлёпать, убить\n"
+    "💞 Отношения (ответом на сообщение человека): «предложить отношения», потом он пишет "
+    "«принять» или «отказать». Дальше: «моя пара», «свидание», «поцеловать», «обнять», "
+    "«расстаться», «топ пар». Без внимания любовь угасает, и пара может распасться\n\n"
     "/анрег — выйти из созыва, /рег — вернуться\n\n"
     "💡 Можно писать словами без слеша (сообщение целиком): "
     "профиль, топ, неделя, месяц, квесты, дуэль, кости, слоты, монетка, помощь"
@@ -102,6 +106,9 @@ ADMIN_HELP = (
     "повысить 2 — выдать ранг (ответом или @юзернейм, 0 — снять), только 8 ранг\n"
     "разжаловать — снять ранг\n"
     "админы [ранг] — список админов\n"
+    "добавить картинку обнять — ответом на гифку/картинку/видео (можно несколько на одно действие); "
+    "для отношений: добавить картинку отн поцелуй\n"
+    "список картинок, очистить картинки обнять\n"
     "дк мут 2 — с какого ранга доступна команда («дк» без цифры покажет все), только 8 ранг\n"
     "статистика, слова дня, итоги, запустить вопрос, запустить викторину\n\n"
     "Должности: 1 Мл. модератор, 2 Старший модератор, 3 Главный модератор, 4 Стажер админ, "
@@ -167,6 +174,22 @@ RP = {
     "укусить": ("{a} укусил(а) {b}", "😬"),
     "отшлёпать": ("{a} отшлёпал(а) {b}", "🍑"),
     "похвалить": ("{a} похвалил(а) {b}", "👏"),
+    "поцеловать": ("{a} поцеловал(а) {b}", "😘"),
+    "пощекотать": ("{a} пощекотал(а) {b}", "🤭"),
+    "ткнуть": ("{a} ткнул(а) {b}", "👉"),
+    "покормить": ("{a} покормил(а) {b}", "🍙"),
+    "помахать": ("{a} помахал(а) {b}", "👋"),
+    "взять за руку": ("{a} взял(а) за руку {b}", "🤝"),
+    "убить": ("{a} убил(а) {b}", "💀"),
+}
+# слово -> категория гифок на nekos.best (если у тебя нет своей картинки в папке rp)
+RP_API = {
+    "обнять": "hug", "обнять крепко": "cuddle", "ударить": "punch", "пнуть": "kick",
+    "погладить": "pat", "дать пять": "highfive", "пожать руку": "handshake",
+    "укусить": "bite", "отшлёпать": "slap", "похвалить": "thumbsup",
+    "поцеловать": "kiss", "пощекотать": "tickle", "ткнуть": "poke",
+    "покормить": "feed", "помахать": "wave", "взять за руку": "handhold",
+    "убить": "shoot",
 }
 
 KEYBOARD_ROWS = ["йцукенгшщзхъ", "фывапролджэ", "ячсмитьбю",
@@ -211,6 +234,14 @@ CREATE TABLE IF NOT EXISTS mutes(
   user_id INTEGER PRIMARY KEY, name TEXT, until REAL, reason TEXT,
   by_name TEXT, created REAL);
 CREATE TABLE IF NOT EXISTS cmd_access(cmd TEXT PRIMARY KEY, rank INTEGER);
+CREATE TABLE IF NOT EXISTS rp_media(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, kind TEXT, file_id TEXT,
+  file_unique TEXT, added_by TEXT, created REAL);
+CREATE TABLE IF NOT EXISTS pairs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, a INTEGER, b INTEGER, love INTEGER DEFAULT 30,
+  since REAL, last_action REAL, gain_day TEXT, gain INTEGER DEFAULT 0, date_day TEXT);
+CREATE TABLE IF NOT EXISTS proposals(
+  to_id INTEGER PRIMARY KEY, from_id INTEGER, created REAL, msg_id INTEGER);
 """)
 try:
     db.execute("ALTER TABLE users ADD COLUMN arank INTEGER DEFAULT 0")
@@ -640,6 +671,7 @@ async def tick(app):
         ("question", QUESTION_TIME, lambda: post_question(bot)),
         ("quiz", QUIZ_TIME, lambda: post_quiz(bot)),
         ("summary", SUMMARY_TIME, lambda: send_summary(bot, d, True)),
+        ("relations", REL_TIME, lambda: rel_daily(bot)),
     ):
         sched = n.replace(hour=h, minute=m, second=0, microsecond=0)
         if n >= sched and (n - sched) < timedelta(hours=2) and state_get("ran_" + name) != d:
@@ -740,7 +772,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 5")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 7")
 
 
 def why_no_target(update, usage):
@@ -1132,6 +1164,7 @@ DEFAULT_RANKS = {
     "бан": 2, "разбан": 2, "статистика": 2, "слова дня": 2,
     "тег": 3, "снять тег": 3,
     "итоги": 4, "запустить вопрос": 4, "запустить викторину": 4,
+    "добавить картинку": 2, "список картинок": 1, "очистить картинки": 3,
 }
 ADMIN_TITLES = {
     1: "Мл. модератор", 2: "Старший модератор", 3: "Главный модератор",
@@ -1448,6 +1481,77 @@ async def cmd_quiz(update, context):
     await post_quiz(context.bot)
 
 
+def pic_key(name):
+    name = name.strip().lower()
+    if name in RP:
+        return name
+    if name.startswith("отн "):
+        e = name[4:].strip()
+        if e in REL_EVENTS:
+            return "отн:" + e
+    return None
+
+
+def pic_names_text():
+    return ("РП-действия: " + ", ".join(RP) + "\n\nОтношения (пиши с «отн »):\n" +
+            "\n".join(f"отн {k} — {v}" for k, v in REL_EVENTS.items()))
+
+
+@need("добавить картинку")
+async def cmd_pic_add(update, context):
+    msg = update.effective_message
+    name = " ".join(context.args or [])
+    key = pic_key(name)
+    if not key:
+        return await reply(update, "Ответь на гифку, картинку или видео и напиши "
+                                   "«добавить картинку обнять».\n\n" + esc(pic_names_text()))
+    r = msg.reply_to_message
+    kind = file_id = unique = None
+    if r:
+        if r.animation:
+            kind, file_id, unique = "animation", r.animation.file_id, r.animation.file_unique_id
+        elif r.video:
+            kind, file_id, unique = "video", r.video.file_id, r.video.file_unique_id
+        elif r.photo:
+            kind, file_id, unique = "photo", r.photo[-1].file_id, r.photo[-1].file_unique_id
+        elif r.document and (r.document.mime_type or "").startswith(("image/", "video/")):
+            kind, file_id, unique = "document", r.document.file_id, r.document.file_unique_id
+    if not file_id:
+        return await reply(update, "Ответь этой командой на сообщение с гифкой, картинкой или видео.")
+    if db.execute("SELECT 1 FROM rp_media WHERE action=? AND file_unique=?", (key, unique)).fetchone():
+        return await reply(update, "Эта картинка уже сохранена для этого действия.")
+    db.execute("INSERT INTO rp_media(action,kind,file_id,file_unique,added_by,created) "
+               "VALUES(?,?,?,?,?,?)", (key, kind, file_id, unique,
+                                       disp(update.effective_user), time.time()))
+    db.commit()
+    n = db.execute("SELECT COUNT(*) FROM rp_media WHERE action=?", (key,)).fetchone()[0]
+    await reply(update, f"✅ Сохранил для «{esc(name.lower())}». Картинок у этого действия: {n}.")
+
+
+@need("список картинок")
+async def cmd_pic_list(update, context):
+    counts = {r["action"]: r["c"] for r in db.execute(
+        "SELECT action, COUNT(*) c FROM rp_media GROUP BY action")}
+    lines = ["🖼 <b>Картинки (сколько загружено)</b>", "<b>РП:</b>"]
+    for k in RP:
+        lines.append(f"• {k} — {counts.get(k, 0)}" + ("" if counts.get(k) else " (будет гифка из интернета)"))
+    lines.append("<b>Отношения:</b>")
+    for k in REL_EVENTS:
+        lines.append(f"• отн {k} — {counts.get('отн:' + k, 0)}")
+    await reply(update, "\n".join(lines))
+
+
+@need("очистить картинки")
+async def cmd_pic_clear(update, context):
+    name = " ".join(context.args or [])
+    key = pic_key(name)
+    if not key:
+        return await reply(update, "Напиши, у какого действия удалить картинки: «очистить картинки обнять».")
+    n = db.execute("DELETE FROM rp_media WHERE action=?", (key,)).rowcount
+    db.commit()
+    await reply(update, f"🗑 Удалил картинок у «{esc(name.lower())}»: {n}.")
+
+
 async def _set_rank(update, context, rank, args):
     uid, name, rest, err = resolve_target(update, args)
     if err:
@@ -1571,6 +1675,102 @@ async def handle_rep(update, context, m):
     await check_quests(context.bot, giver.id)
 
 
+_rp_cats = None
+RP_UA = {"User-Agent": "clavekbot/1.0 (telegram chat bot)"}
+
+
+async def rp_gif_url(category):
+    """Случайная гифка категории с nekos.best или None."""
+    import httpx
+    global _rp_cats
+    try:
+        async with httpx.AsyncClient(timeout=10, headers=RP_UA) as c:
+            if _rp_cats is None:
+                r = await c.get("https://nekos.best/api/v2/endpoints")
+                data = r.json()
+                _rp_cats = data if isinstance(data, dict) else {}
+            if _rp_cats:
+                info = _rp_cats.get(category)
+                if info is None:
+                    return None
+                if isinstance(info, dict) and info.get("format") not in (None, "gif"):
+                    return None
+            r = await c.get(f"https://nekos.best/api/v2/{category}")
+            return r.json()["results"][0]["url"]
+    except Exception as e:
+        print("RP: не удалось получить гифку:", repr(e)[:150])
+        return None
+
+
+def local_rp_files(action):
+    """Свои файлы из папки rp: «обнять.gif», «обнять_2.jpg», «отн_поцелуй_1.mp4»."""
+    stem = action.replace(":", "_")
+    folder = os.path.join(BASE, RP_DIR)
+    out = []
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return out
+    for fn in names:
+        base, ext = os.path.splitext(fn)
+        if ext.lower() not in (".gif", ".mp4", ".jpg", ".jpeg", ".png", ".webp"):
+            continue
+        if base == stem or base.startswith(stem + "_"):
+            out.append(os.path.join(folder, fn))
+    random.shuffle(out)
+    return out
+
+
+async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None):
+    """Картинка к сообщению. Порядок: свои картинки из базы -> файлы из папки rp ->
+    гифка с nekos.best -> просто текст."""
+    rp = ReplyParameters(message_id=reply_to, allow_sending_without_reply=True) if reply_to else None
+
+    async def send(kind, media):
+        kw = dict(caption=text, parse_mode=HTML, reply_parameters=rp)
+        if kind == "animation":
+            return await bot.send_animation(chat_id, media, **kw)
+        if kind == "video":
+            return await bot.send_video(chat_id, media, **kw)
+        if kind == "photo":
+            return await bot.send_photo(chat_id, media, **kw)
+        return await bot.send_document(chat_id, media, **kw)
+
+    for action in actions:
+        rows = db.execute("SELECT kind, file_id FROM rp_media WHERE action=?", (action,)).fetchall()
+        if rows:
+            r = random.choice(rows)
+            try:
+                return await send(r["kind"], r["file_id"])
+            except Exception as e:
+                print("Картинка из базы не отправилась:", repr(e)[:150])
+    for action in actions:
+        for p in local_rp_files(action):
+            ext = os.path.splitext(p)[1].lower()
+            try:
+                with open(p, "rb") as f:
+                    return await send("animation" if ext in (".gif", ".mp4") else "photo", f)
+            except Exception as e:
+                print("Файл из rp не отправился:", p, repr(e)[:150])
+    if api_cat:
+        url = await rp_gif_url(api_cat)
+        if url:
+            try:
+                return await send("animation", url)
+            except Exception as e:
+                print("RP: гифка по ссылке не ушла:", repr(e)[:150])
+                try:
+                    import httpx
+                    from io import BytesIO
+                    async with httpx.AsyncClient(timeout=20, headers=RP_UA) as c:
+                        data = (await c.get(url)).content
+                    return await send("animation", BytesIO(data))
+                except Exception as e2:
+                    print("RP: и файлом не ушла:", repr(e2)[:150])
+    return await bot.send_message(chat_id, text, parse_mode=HTML,
+                                  link_preview_options=NOPREV, reply_parameters=rp)
+
+
 async def handle_rp(update, context, key):
     me = update.effective_user
     other = target_user(update)
@@ -1580,21 +1780,210 @@ async def handle_rp(update, context, key):
         return await reply(update, "Давай лучше кого-нибудь другого 🙂")
     tpl, emoji = RP[key]
     text = emoji + " " + tpl.format(a=link(me.id, disp(me)), b=link(other.id, disp(other)))
-    folder = os.path.join(BASE, RP_DIR)
-    for ext in ("gif", "mp4", "jpg", "png", "webp"):
-        p = os.path.join(folder, f"{key}.{ext}")
-        if os.path.exists(p):
-            try:
-                with open(p, "rb") as f:
-                    if ext in ("gif", "mp4"):
-                        await update.effective_message.reply_animation(f, caption=text, parse_mode=HTML)
-                    else:
-                        await update.effective_message.reply_photo(f, caption=text, parse_mode=HTML)
-                return
-            except Exception:
-                log.exception("rp media")
-                break
-    await reply(update, text)
+    actions = [key]
+    gain = REL_GAIN.get(key)
+    if gain:
+        res = rel_add(me.id, other.id, gain)
+        if res is not None:
+            add, love = res
+            text += (f"\n💞 +{add} к любви ({love}/100)" if add
+                     else "\n💞 На сегодня лимит любви набран")
+            if key in REL_PIC:
+                actions.insert(0, "отн:" + REL_PIC[key])
+    await send_with_pic(context.bot, update.effective_chat.id, text, actions,
+                        reply_to=update.effective_message.message_id, api_cat=RP_API.get(key))
+
+
+# ============================ ОТНОШЕНИЯ ============================
+REL_START, REL_DAILY_CAP, REL_DATE_GAIN, REL_DECAY, REL_WARN_BELOW = 30, 30, 15, 5, 30
+REL_TIME = (10, 15)            # когда раз в день проверять, кто забросил партнёра
+REL_GAIN = {"поцеловать": 10, "обнять": 6, "обнять крепко": 8, "взять за руку": 5,
+            "погладить": 4, "покормить": 3, "пощекотать": 3, "похвалить": 3, "помахать": 1}
+REL_PIC = {"поцеловать": "поцелуй", "обнять": "объятие", "обнять крепко": "объятие"}
+REL_EVENTS = {
+    "предложение": "кто-то предложил отношения",
+    "пара": "предложение принято, пара создана",
+    "поцелуй": "партнёры целуются (команда «поцеловать»)",
+    "объятие": "партнёры обнимаются (команды «обнять»)",
+    "свидание": "команда «свидание»",
+    "скучаю": "напоминание: давно не было внимания",
+    "расставание": "расставание",
+}
+PROPOSE = {"предложить отношения", "предложить встречаться", "встречаться"}
+ACCEPT = {"принять", "принимаю", "согласна", "согласен"}
+DECLINE = {"отказать", "отказываюсь", "отказаться"}
+LEAVE = {"расстаться", "расстаёмся", "расстаемся", "порвать отношения"}
+STATUS_SELF = {"моя пара", "мои отношения"}
+STATUS_OTHER = {"пара", "отношения"}   # только ответом на сообщение человека
+DATE_WORDS = {"свидание", "пойти на свидание"}
+TOPPAIRS = {"топ пар"}
+
+
+def pair_of(uid):
+    return db.execute("SELECT * FROM pairs WHERE a=? OR b=?", (uid, uid)).fetchone()
+
+
+def partner_of(row, uid):
+    return row["b"] if row["a"] == uid else row["a"]
+
+
+def uname(uid):
+    r = urow(uid)
+    return r["name"] if r else str(uid)
+
+
+def love_bar(n):
+    full = max(0, min(10, round(n / 10)))
+    return "💗" * full + "🤍" * (10 - full) + f" {n}/100"
+
+
+def rel_add(uid, other, amount):
+    """Начислить любовь, если uid и other — пара. -> (начислено, всего) или None."""
+    row = pair_of(uid)
+    if not row or partner_of(row, uid) != other:
+        return None
+    d = today()
+    gain = row["gain"] if row["gain_day"] == d else 0
+    add = max(0, min(amount, REL_DAILY_CAP - gain))
+    love = min(100, row["love"] + add)
+    db.execute("UPDATE pairs SET love=?, gain=?, gain_day=?, last_action=? WHERE id=?",
+               (love, gain + add, d, time.time(), row["id"]))
+    db.commit()
+    return add, love
+
+
+async def handle_relation(update, context, low):
+    clean = re.sub(r"[!.?,]+$", "", low).strip()
+    if not (clean in PROPOSE or clean in ACCEPT or clean in DECLINE or clean in LEAVE
+            or clean in STATUS_SELF or clean in STATUS_OTHER or clean in DATE_WORDS
+            or clean in TOPPAIRS):
+        return False
+    msg, me, chat = update.effective_message, update.effective_user, update.effective_chat
+    bot = context.bot
+
+    async def say(text, pic=None):
+        await send_with_pic(bot, chat.id, text, ["отн:" + pic] if pic else [],
+                            reply_to=msg.message_id)
+
+    if clean in PROPOSE:
+        other = target_user(update)
+        if not other or other.id == me.id:
+            await say("Ответь этими словами на сообщение человека: «предложить отношения» 💌")
+        elif pair_of(me.id):
+            await say("Ты уже в отношениях. Сначала «расстаться».")
+        elif pair_of(other.id):
+            await say(f"У {esc(disp(other))} уже есть пара.")
+        else:
+            db.execute("INSERT OR REPLACE INTO proposals(to_id,from_id,created,msg_id) "
+                       "VALUES(?,?,?,?)", (other.id, me.id, time.time(), msg.message_id))
+            db.commit()
+            await say(f"💌 {link(me.id, disp(me))} предлагает отношения "
+                      f"{link(other.id, disp(other))}!\nОтветь «принять» или «отказать» "
+                      f"(24 часа).", "предложение")
+        return True
+
+    if clean in ACCEPT or clean in DECLINE:
+        pr = db.execute("SELECT * FROM proposals WHERE to_id=?", (me.id,)).fetchone()
+        if not pr:
+            return False
+        db.execute("DELETE FROM proposals WHERE to_id=?", (me.id,))
+        db.commit()
+        if time.time() - pr["created"] > 86400:
+            return False
+        a = pr["from_id"]
+        if clean in DECLINE:
+            await say(f"💔 {link(me.id, disp(me))} отказал(а) {link(a, uname(a))}.")
+        elif pair_of(a) or pair_of(me.id):
+            await say("Кто-то из вас уже в отношениях.")
+        else:
+            db.execute("INSERT INTO pairs(a,b,love,since,last_action) VALUES(?,?,?,?,?)",
+                       (a, me.id, REL_START, time.time(), time.time()))
+            db.commit()
+            await say(f"💞 {link(a, uname(a))} и {link(me.id, disp(me))} теперь пара!\n"
+                      f"{love_bar(REL_START)}\nУделяйте друг другу внимание: «поцеловать», "
+                      f"«обнять», «свидание». Без внимания любовь угасает.", "пара")
+        return True
+
+    if clean in LEAVE:
+        row = pair_of(me.id)
+        if not row:
+            return False
+        else:
+            p = partner_of(row, me.id)
+            db.execute("DELETE FROM pairs WHERE id=?", (row["id"],))
+            db.commit()
+            await say(f"💔 {link(me.id, disp(me))} расстался(ась) с {link(p, uname(p))}.",
+                      "расставание")
+        return True
+
+    if clean in STATUS_SELF or clean in STATUS_OTHER:
+        u = target_user(update) if clean in STATUS_OTHER else None
+        if clean in STATUS_OTHER and not u:
+            return False
+        u = u or me
+        row = pair_of(u.id)
+        if not row:
+            await say("У тебя нет пары. Ответь на сообщение человека: «предложить отношения»."
+                      if u.id == me.id else f"У {esc(disp(u))} нет пары.")
+        else:
+            p = partner_of(row, u.id)
+            days = int((time.time() - row["since"]) // 86400) + 1
+            await say(f"💞 <b>Пара:</b> {link(u.id, disp(u))} и {link(p, uname(p))}\n"
+                      f"{love_bar(row['love'])}\n📅 Вместе: {days} дн.\n"
+                      f"🕰 Последнее внимание: {fmt_when(row['last_action'])}")
+        return True
+
+    if clean in DATE_WORDS:
+        row = pair_of(me.id)
+        if not row:
+            return False
+        elif row["date_day"] == today():
+            await say("Сегодня вы уже ходили на свидание 🌹")
+        else:
+            p = partner_of(row, me.id)
+            love = min(100, row["love"] + REL_DATE_GAIN)
+            db.execute("UPDATE pairs SET love=?, date_day=?, last_action=? WHERE id=?",
+                       (love, today(), time.time(), row["id"]))
+            db.commit()
+            await say(f"🌹 {link(me.id, disp(me))} и {link(p, uname(p))} сходили на свидание! "
+                      f"+{REL_DATE_GAIN} к любви\n{love_bar(love)}", "свидание")
+        return True
+
+    rows = db.execute("SELECT * FROM pairs ORDER BY love DESC, since LIMIT 10").fetchall()
+    if not rows:
+        await say("Пока нет ни одной пары 💔")
+    else:
+        await say("💞 <b>Топ пар</b>\n" + "\n".join(
+            f"{i}. {esc(uname(r['a']))} ❤ {esc(uname(r['b']))} — {r['love']}/100"
+            for i, r in enumerate(rows, 1)))
+    return True
+
+
+async def rel_daily(bot):
+    """Раз в день: у кого не было внимания больше суток, любовь падает."""
+    now_ts = time.time()
+    for row in db.execute("SELECT * FROM pairs").fetchall():
+        if now_ts - (row["last_action"] or row["since"]) < 86400:
+            continue
+        love = max(0, row["love"] - REL_DECAY)
+        a, b = row["a"], row["b"]
+        names = f"{link(a, uname(a))} и {link(b, uname(b))}"
+        try:
+            if love <= 0:
+                db.execute("DELETE FROM pairs WHERE id=?", (row["id"],))
+                db.commit()
+                await send_with_pic(bot, CHAT_ID, f"💔 {names} расстались: без внимания любовь угасла.",
+                                    ["отн:расставание"])
+            else:
+                db.execute("UPDATE pairs SET love=? WHERE id=?", (love, row["id"]))
+                db.commit()
+                if love <= REL_WARN_BELOW:
+                    await send_with_pic(
+                        bot, CHAT_ID,
+                        f"🥀 {names}, вы давно не уделяли друг другу внимание.\n{love_bar(love)}\n"
+                        f"Напишите «поцеловать» или «свидание», пока не поздно!", ["отн:скучаю"])
+        except Exception:
+            log.exception("rel_daily")
 
 
 # Команды обычными словами (сообщение целиком, без слеша)
@@ -1622,6 +2011,9 @@ ADMIN_ALIASES = {
     "запустить викторину": (cmd_quiz, "запустить викторину", 0),
     "повысить": (cmd_promote, "повысить", 3), "разжаловать": (cmd_demote, "повысить", 2),
     "дк": (cmd_access, "дк", 6),
+    "добавить картинку": (cmd_pic_add, "добавить картинку", 4),
+    "список картинок": (cmd_pic_list, "список картинок", 0),
+    "очистить картинки": (cmd_pic_clear, "очистить картинки", 4),
 }
 
 
@@ -1683,6 +2075,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if low in RP:
         return await handle_rp(update, context, low)
 
+    if await handle_relation(update, context, low):
+        return
+
     if await run_alias(update, context, low, text):
         return
 
@@ -1712,6 +2107,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     and msg.reply_to_message.from_user.id != user.id
                     and not msg.reply_to_message.from_user.is_bot)
     events = add_counted(user.id, msg.message_id, is_reply)
+    if is_reply:
+        rel_add(user.id, msg.reply_to_message.from_user.id, 1)
     count_words(text)
     if events:
         await reply(update, "\n".join(events))
