@@ -772,7 +772,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 7")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 8")
 
 
 def why_no_target(update, usage):
@@ -1705,18 +1705,18 @@ async def rp_gif_url(category):
 def local_rp_files(action):
     """Свои файлы из папки rp: «обнять.gif», «обнять_2.jpg», «отн_поцелуй_1.mp4»."""
     stem = action.replace(":", "_")
-    folder = os.path.join(BASE, RP_DIR)
     out = []
-    try:
-        names = os.listdir(folder)
-    except OSError:
-        return out
-    for fn in names:
-        base, ext = os.path.splitext(fn)
-        if ext.lower() not in (".gif", ".mp4", ".jpg", ".jpeg", ".png", ".webp"):
+    for folder in (os.path.join(BASE, RP_DIR), BASE):     # папка rp или рядом с bot.py
+        try:
+            names = os.listdir(folder)
+        except OSError:
             continue
-        if base == stem or base.startswith(stem + "_"):
-            out.append(os.path.join(folder, fn))
+        for fn in names:
+            base, ext = os.path.splitext(fn)
+            if ext.lower() not in (".gif", ".mp4", ".jpg", ".jpeg", ".png", ".webp"):
+                continue
+            if base == stem or base.startswith(stem + "_"):
+                out.append(os.path.join(folder, fn))
     random.shuffle(out)
     return out
 
