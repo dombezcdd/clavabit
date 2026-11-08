@@ -94,17 +94,20 @@ HELP_TEXT = (
 )
 
 ADMIN_HELP = (
-    "🛠 <b>Админ-панель</b> (только владелец)\n"
-    "/mute [минуты] — ответом, по умолчанию 60\n"
-    "/unmute — ответом\n"
-    "/ban, /unban — ответом\n"
-    "/tag текст — выдать тег (ответом), /untag — снять\n"
-    "/stat — активность чата\n"
-    "/topwords — о чём чат говорил сегодня (общие слова)\n"
-    "/award — итоги прямо сейчас\n"
-    "/question, /quiz — запустить вручную\n\n"
-    "💡 Словами (только от владельца): мут 30, размут, бан, разбан, тег Текст, "
-    "снять тег, статистика, слова дня, итоги, запустить вопрос, запустить викторину"
+    "🛠 <b>Админ-панель</b> (по рангам 1–8, владелец — 8)\n"
+    "мут 30 @юзернейм причина — или ответом: мут 30 причина (время: 30, 2ч, 1д)\n"
+    "размут, бан, разбан — ответом или @юзернейм\n"
+    "список мута — кто в муте, на сколько и почему\n"
+    "тег Текст / снять тег — ответом на сообщение\n"
+    "повысить 2 — выдать ранг (ответом или @юзернейм, 0 — снять), только 8 ранг\n"
+    "разжаловать — снять ранг\n"
+    "админы [ранг] — список админов\n"
+    "дк мут 2 — с какого ранга доступна команда («дк» без цифры покажет все), только 8 ранг\n"
+    "статистика, слова дня, итоги, запустить вопрос, запустить викторину\n\n"
+    "Должности: 1 Мл. модератор, 2 Старший модератор, 3 Главный модератор, 4 Стажер админ, "
+    "5 Младший админ, 6 Старший админ, 7 Зам.Администрации, 8 Доверенное лицо\n\n"
+    "Со слешем: /mute, /unmute, /ban, /unban, /tag, /untag, /mutelist, /promote, /demote, "
+    "/access, /admins, /stat, /topwords, /award, /question, /quiz"
 )
 
 RANK_TITLES = [  # (с какого уровня, название)
@@ -204,7 +207,15 @@ CREATE TABLE IF NOT EXISTS rep_log(
   day TEXT, giver INTEGER, target INTEGER, PRIMARY KEY(day, giver, target));
 CREATE TABLE IF NOT EXISTS words(
   day TEXT, word TEXT, cnt INTEGER DEFAULT 0, PRIMARY KEY(day, word));
+CREATE TABLE IF NOT EXISTS mutes(
+  user_id INTEGER PRIMARY KEY, name TEXT, until REAL, reason TEXT,
+  by_name TEXT, created REAL);
+CREATE TABLE IF NOT EXISTS cmd_access(cmd TEXT PRIMARY KEY, rank INTEGER);
 """)
+try:
+    db.execute("ALTER TABLE users ADD COLUMN arank INTEGER DEFAULT 0")
+except sqlite3.OperationalError:
+    pass
 db.commit()
 
 
@@ -623,6 +634,8 @@ async def tick(app):
     bot = app.bot
     n = now()
     d = n.strftime(FMT)
+    db.execute("DELETE FROM mutes WHERE until<?", (time.time(),))
+    db.commit()
     for name, (h, m), fn in (
         ("question", QUESTION_TIME, lambda: post_question(bot)),
         ("quiz", QUIZ_TIME, lambda: post_quiz(bot)),
@@ -727,7 +740,26 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 3")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 5")
+
+
+def why_no_target(update, usage):
+    """Если команду дали ответом, но цель не определилась — объяснить почему."""
+    m = update.effective_message
+    r = m.reply_to_message if m else None
+    if m and getattr(m, "external_reply", None):
+        return ("Ты ответил на сообщение из другого чата (личного). Найди сообщение этого "
+                "человека прямо в группе и ответь командой на него.")
+    if r:
+        if getattr(r, "sender_chat", None):
+            return ("Это сообщение отправлено от имени канала или чата, а не участника — "
+                    "применить команду нельзя.")
+        if r.from_user and r.from_user.is_bot:
+            return (f"Это сообщение от бота или анонимного админа ({esc(r.from_user.full_name)}) — "
+                    "применить команду нельзя.")
+        if not r.from_user:
+            return "Не удалось определить автора этого сообщения (скрытый отправитель)."
+    return usage
 
 
 def target_user(update):
@@ -765,9 +797,11 @@ async def build_profile(bot, row):
     name = f"@{row['username']}" if row["username"] else esc(row["name"])
     tag = f"<b>{esc(row['tag'])}</b>\n" if (row["tag"] or "").strip() else ""
     st = row["streak"] if row["last_day"] in (d, (now() - timedelta(days=1)).strftime(FMT)) else 0
+    ar = rank_of_id(uid)
+    adm = f"🛡 {rank_title(ar)} (админ-ранг {ar})\n" if ar else ""
     return (
         f"👤 Это пользователь {name}\n{tag}"
-        f"👨🏻‍🔧 {role}\n\n"
+        f"👨🏻‍🔧 {role}\n{adm}\n"
         f"▫️ [{lvl}] Ранг: {esc(title_of(lvl))}{nxt}\n"
         f"🕰 Олдство: {ot} ({days} дн. в чате)\n\n"
         f"Репутация: ✨ {row['rep']} | ➕ {row['rep_given']}\n\n"
@@ -872,7 +906,7 @@ async def cmd_dice(update, context):
     me = update.effective_user
     other = target_user(update)
     if not other or other.id == me.id:
-        return await reply(update, "Ответь командой /dice на сообщение соперника 🎲")
+        return await reply(update, why_no_target(update, "Ответь командой /dice на сообщение соперника 🎲"))
     if not cooldown(("dice", me.id), 20):
         return await reply(update, "Подожди немного ⏳")
     chat = update.effective_chat.id
@@ -1091,92 +1125,265 @@ async def cmd_duel(update, context):
     await played(context.bot, other.id)
 
 
-# ---------- админ-панель ----------
-@owner_only
+# ---------- ранги админов и права на команды ----------
+# с какого ранга доступна команда (меняется: «дк мут 2»). Владелец всегда 8.
+DEFAULT_RANKS = {
+    "админка": 1, "админы": 1, "мут": 1, "размут": 1, "список мута": 1,
+    "бан": 2, "разбан": 2, "статистика": 2, "слова дня": 2,
+    "тег": 3, "снять тег": 3,
+    "итоги": 4, "запустить вопрос": 4, "запустить викторину": 4,
+}
+ADMIN_TITLES = {
+    1: "Мл. модератор", 2: "Старший модератор", 3: "Главный модератор",
+    4: "Стажер админ", 5: "Младший админ", 6: "Старший админ",
+    7: "Зам.Администрации", 8: "Доверенное лицо",
+}
+
+
+def rank_title(n):
+    return ADMIN_TITLES.get(n, "")
+
+
+FIXED_8 = {"повысить", "дк"}          # только админ 8 ранга
+MAX_RANK = 8
+
+
+def rank_of_id(uid):
+    oid = state_get("owner_id")
+    if oid and str(uid) == oid:
+        return MAX_RANK
+    r = db.execute("SELECT arank FROM users WHERE user_id=?", (uid,)).fetchone()
+    return (r["arank"] or 0) if r else 0
+
+
+def rank_of(user):
+    if not user:
+        return 0
+    if is_owner(user):
+        return MAX_RANK
+    return rank_of_id(user.id)
+
+
+def required_rank(key):
+    if key in FIXED_8:
+        return MAX_RANK
+    r = db.execute("SELECT rank FROM cmd_access WHERE cmd=?", (key,)).fetchone()
+    return r["rank"] if r else DEFAULT_RANKS.get(key, MAX_RANK)
+
+
+def has_rank(user, key):
+    return rank_of(user) >= required_rank(key)
+
+
+def can_act_on(actor, target_id):
+    """Нельзя трогать тех, чей ранг не ниже твоего (владелец может всех)."""
+    if is_owner(actor):
+        return True
+    return rank_of(actor) > rank_of_id(target_id)
+
+
+def need(key):
+    def deco(fn):
+        async def wrapper(update, context):
+            if not has_rank(update.effective_user, key):
+                return
+            return await fn(update, context)
+        wrapper.__name__ = fn.__name__
+        return group_only(wrapper)
+    return deco
+
+
+UNITS = {"м": 1, "мин": 1, "минут": 1, "минуту": 1, "минуты": 1, "m": 1, "min": 1, "mins": 1,
+         "ч": 60, "час": 60, "часа": 60, "часов": 60, "h": 60, "hour": 60, "hours": 60,
+         "д": 1440, "дн": 1440, "день": 1440, "дня": 1440, "дней": 1440,
+         "d": 1440, "day": 1440, "days": 1440}
+
+
+def parse_duration(args):
+    """('30','мин') / ('2ч') / ('10','min') -> (минуты, сколько слов съели) или (None, 0)."""
+    if not args:
+        return None, 0
+    m = re.fullmatch(r"(\d{1,6})([a-zа-я]*)", args[0].lower())
+    if not m:
+        return None, 0
+    n, unit, used = int(m.group(1)), m.group(2), 1
+    if not unit and len(args) > 1 and args[1].lower() in UNITS:
+        unit, used = args[1].lower(), 2
+    if unit and unit not in UNITS:
+        return None, 0
+    return n * (UNITS[unit] if unit else 1), used
+
+
+def fmt_minutes(m):
+    m = max(int(m), 0)
+    d, rem = divmod(m, 1440)
+    h, mi = divmod(rem, 60)
+    parts = []
+    if d:
+        parts.append(f"{d} д.")
+    if h:
+        parts.append(f"{h} ч.")
+    if mi or not parts:
+        parts.append(f"{mi} мин.")
+    return " ".join(parts)
+
+
+def resolve_target(update, args):
+    """Цель: ответ на сообщение, иначе @юзернейм / id из аргументов.
+    -> (uid, имя, оставшиеся аргументы, текст ошибки)"""
+    u = target_user(update)
+    if u:
+        return u.id, disp(u), args, None
+    uid = name = None
+    rest = []
+    for a in args:
+        if uid is None and a.startswith("@"):
+            r = find_by_username(a)
+            if not r:
+                return None, None, args, (
+                    f"Не нашёл {esc(a)}: человек должен хотя бы раз написать в чат при "
+                    f"запущенном боте. Можно ответить командой на его сообщение.")
+            uid, name = r["user_id"], r["name"]
+            continue
+        if uid is None and a.isdigit() and len(a) > 6:
+            r = urow(int(a))
+            uid, name = int(a), (r["name"] if r else a)
+            continue
+        rest.append(a)
+    if uid is None:
+        return None, None, args, None
+    return uid, name, rest, None
+
+
+@need("админка")
 async def cmd_admin(update, context):
     await reply(update, ADMIN_HELP)
 
 
-def admin_target(update, context):
-    u = target_user(update)
-    if u:
-        return u.id, disp(u)
-    for a in context.args or []:
-        if a.startswith("@"):
-            r = find_by_username(a)
-            if r:
-                return r["user_id"], r["name"]
-        elif a.isdigit() and len(a) > 5:
-            r = urow(int(a))
-            return int(a), r["name"] if r else a
-    return None, None
+MUTE_USAGE = ("Формат: «мут 30 @юзернейм причина» или ответом на сообщение: «мут 30 причина». "
+              "Время: 30 (минуты), 2ч, 1д.")
 
 
-@owner_only
+@need("мут")
 async def cmd_mute(update, context):
-    uid, name = admin_target(update, context)
+    msg = update.effective_message
+    args = list(context.args or [])
+    from_slash = (msg.text or "").startswith("/")
+    minutes, used = parse_duration(args)
+    if minutes is None:
+        minutes = 60
+        first = args[0] if args else ""
+        if args and not from_slash and not (first.startswith("@") or
+                                            (first.isdigit() and len(first) > 6)):
+            return                      # это обычная фраза, а не команда
+    else:
+        args = args[used:]
+    uid, name, rest, err = resolve_target(update, args)
+    if err:
+        return await reply(update, err)
     if not uid:
-        return await reply(update, "Ответь командой на сообщение участника: /mute [минуты]")
-    minutes = 60
-    for a in context.args or []:
-        if a.isdigit() and len(a) <= 6:
-            minutes = int(a)
-            break
+        return await reply(update, why_no_target(update, MUTE_USAGE))
+    if minutes < 1:
+        return await reply(update, "Время должно быть не меньше 1 минуты.")
+    minutes = min(minutes, 366 * 1440)
+    actor = update.effective_user
+    if not can_act_on(actor, uid):
+        return await reply(update, "Нельзя: у этого участника ранг не ниже твоего.")
+    reason = " ".join(rest).strip()[:200]
+    until = time.time() + minutes * 60
     try:
         await context.bot.restrict_chat_member(
             update.effective_chat.id, uid, ChatPermissions.no_permissions(),
-            until_date=int(time.time() + minutes * 60))
-        await reply(update, f"🔇 {esc(name)} в муте на {minutes} мин.")
+            until_date=int(until))
     except Exception as e:
-        await reply(update, f"Не вышло: {esc(e)}\nПроверь, что у бота есть права админа.")
+        return await reply(update, f"Не вышло: {esc(e)}\n"
+                                   "Проверь, что у бота есть право блокировать участников "
+                                   "и что это не админ чата.")
+    db.execute("INSERT OR REPLACE INTO mutes(user_id,name,until,reason,by_name,created) "
+               "VALUES(?,?,?,?,?,?)", (uid, name, until, reason, disp(actor), time.time()))
+    db.commit()
+    await reply(update, f"🔇 {link(uid, name)} в муте на {fmt_minutes(minutes)}."
+                        + (f"\nПричина: {esc(reason)}" if reason else ""))
 
 
-@owner_only
+@need("размут")
 async def cmd_unmute(update, context):
-    uid, name = admin_target(update, context)
+    uid, name, rest, err = resolve_target(update, list(context.args or []))
+    if err:
+        return await reply(update, err)
     if not uid:
-        return await reply(update, "Ответь командой на сообщение участника: /unmute")
+        return await reply(update, why_no_target(
+            update, "Ответь на сообщение участника или укажи @юзернейм: размут"))
     try:
         await context.bot.restrict_chat_member(
             update.effective_chat.id, uid, ChatPermissions.all_permissions())
-        await reply(update, f"🔊 {esc(name)} размучен.")
     except Exception as e:
-        await reply(update, f"Не вышло: {esc(e)}")
+        return await reply(update, f"Не вышло: {esc(e)}")
+    db.execute("DELETE FROM mutes WHERE user_id=?", (uid,))
+    db.commit()
+    await reply(update, f"🔊 {link(uid, name)} размучен.")
 
 
-@owner_only
+@need("список мута")
+async def cmd_mutelist(update, context):
+    db.execute("DELETE FROM mutes WHERE until<?", (time.time(),))
+    db.commit()
+    rows = db.execute("SELECT * FROM mutes ORDER BY until").fetchall()
+    if not rows:
+        return await reply(update, "Сейчас в муте никого нет 🔊")
+    lines = ["🔇 <b>Список мута</b>"]
+    for i, r in enumerate(rows, 1):
+        left = int((r["until"] - time.time()) // 60) + 1
+        lines.append(f"{i}. {link(r['user_id'], r['name'])} — осталось {fmt_minutes(left)}\n"
+                     f"    причина: {esc(r['reason'] or 'не указана')} · выдал: {esc(r['by_name'])}")
+    await reply(update, "\n".join(lines))
+
+
+@need("бан")
 async def cmd_ban(update, context):
-    uid, name = admin_target(update, context)
+    uid, name, rest, err = resolve_target(update, list(context.args or []))
+    if err:
+        return await reply(update, err)
     if not uid:
-        return await reply(update, "Ответь командой на сообщение участника: /ban")
+        return await reply(update, why_no_target(
+            update, "Ответь на сообщение участника или укажи @юзернейм: бан"))
+    if not can_act_on(update.effective_user, uid):
+        return await reply(update, "Нельзя: у этого участника ранг не ниже твоего.")
     try:
         await context.bot.ban_chat_member(update.effective_chat.id, uid)
-        await reply(update, f"⛔ {esc(name)} забанен.")
+        db.execute("DELETE FROM mutes WHERE user_id=?", (uid,))
+        db.commit()
+        await reply(update, f"⛔ {link(uid, name)} забанен.")
     except Exception as e:
         await reply(update, f"Не вышло: {esc(e)}")
 
 
-@owner_only
+@need("разбан")
 async def cmd_unban(update, context):
-    uid, name = admin_target(update, context)
+    uid, name, rest, err = resolve_target(update, list(context.args or []))
+    if err:
+        return await reply(update, err)
     if not uid:
-        return await reply(update, "Ответь командой на сообщение или укажи id: /unban 123456789")
+        return await reply(update, why_no_target(
+            update, "Ответь на сообщение или укажи id / @юзернейм: разбан 123456789"))
     try:
         await context.bot.unban_chat_member(update.effective_chat.id, uid, only_if_banned=True)
-        await reply(update, f"✅ {esc(name)} разбанен.")
+        await reply(update, f"✅ {link(uid, name)} разбанен.")
     except Exception as e:
         await reply(update, f"Не вышло: {esc(e)}")
 
 
-@owner_only
+@need("тег")
 async def cmd_tag(update, context):
-    uid, name = admin_target(update, context)
+    uid, name, rest, err = resolve_target(update, list(context.args or []))
+    if err:
+        return await reply(update, err)
     if not uid:
-        return await reply(update, "Ответь на сообщение участника: /tag Текст тега")
-    words = [a for a in (context.args or []) if not a.startswith("@") and not a.isdigit()]
-    tag = " ".join(words).strip()[:30]
+        return await reply(update, why_no_target(
+            update, "Ответь на сообщение участника: тег Текст тега"))
+    tag = " ".join(rest).strip()[:30]
     if not tag:
-        return await reply(update, "Напиши текст тега: /tag Текст")
+        return await reply(update, "Напиши текст тега: тег Текст")
     if not urow(uid):
         return await reply(update, "Этот участник ещё не писал в чат.")
     db.execute("UPDATE users SET tag=? WHERE user_id=?", (tag, uid))
@@ -1184,17 +1391,20 @@ async def cmd_tag(update, context):
     await reply(update, f"🏷 Тег для {esc(name)}: <b>{esc(tag)}</b>")
 
 
-@owner_only
+@need("снять тег")
 async def cmd_untag(update, context):
-    uid, name = admin_target(update, context)
+    uid, name, rest, err = resolve_target(update, list(context.args or []))
+    if err:
+        return await reply(update, err)
     if not uid:
-        return await reply(update, "Ответь на сообщение участника: /untag")
+        return await reply(update, why_no_target(
+            update, "Ответь на сообщение участника: снять тег"))
     db.execute("UPDATE users SET tag='' WHERE user_id=?", (uid,))
     db.commit()
     await reply(update, f"Тег у {esc(name)} снят.")
 
 
-@owner_only
+@need("статистика")
 async def cmd_stat(update, context):
     d, wk = today(), week_start()
     one = lambda q, *a: db.execute(q, a).fetchone()[0]
@@ -1213,7 +1423,7 @@ async def cmd_stat(update, context):
                 f"<b>Топ-5 недели</b>\n" + (fmt_top(rows) if rows else "—"))
 
 
-@owner_only
+@need("слова дня")
 async def cmd_topwords(update, context):
     rows = db.execute("SELECT word, cnt FROM words WHERE day=? ORDER BY cnt DESC LIMIT 15",
                       (today(),)).fetchall()
@@ -1223,19 +1433,104 @@ async def cmd_topwords(update, context):
                 ", ".join(f"{esc(r['word'])} ({r['cnt']})" for r in rows))
 
 
-@owner_only
+@need("итоги")
 async def cmd_award(update, context):
     await send_summary(context.bot, today(), False)
 
 
-@owner_only
+@need("запустить вопрос")
 async def cmd_question(update, context):
     await post_question(context.bot)
 
 
-@owner_only
+@need("запустить викторину")
 async def cmd_quiz(update, context):
     await post_quiz(context.bot)
+
+
+async def _set_rank(update, context, rank, args):
+    uid, name, rest, err = resolve_target(update, args)
+    if err:
+        return await reply(update, err)
+    if not uid:
+        return await reply(update, why_no_target(
+            update, "Ответь на сообщение участника или укажи @юзернейм: повысить 2"))
+    oid = state_get("owner_id")
+    if oid and str(uid) == oid:
+        return await reply(update, "Ранг владельца изменить нельзя.")
+    if not urow(uid):
+        return await reply(update, "Этот участник ещё не писал в чат.")
+    db.execute("UPDATE users SET arank=? WHERE user_id=?", (rank, uid))
+    db.commit()
+    if rank:
+        await reply(update, f"⭐ {link(uid, name)} получает должность "
+                            f"<b>{esc(rank_title(rank))}</b> (ранг {rank}).")
+    else:
+        await reply(update, f"{link(uid, name)} лишён админ-ранга.")
+
+
+@need("повысить")
+async def cmd_promote(update, context):
+    rank, rest = None, []
+    for a in (context.args or []):
+        if rank is None and a.isdigit() and len(a) == 1:
+            rank = int(a)
+        else:
+            rest.append(a)
+    if rank is None or rank > MAX_RANK:
+        return await reply(update, "Формат: «повысить 2» ответом на сообщение или "
+                                   "«повысить 2 @юзернейм». Ранг от 1 до 8, 0 — снять ранг.\n" +
+                                   "\n".join(f"{k} — {v}" for k, v in ADMIN_TITLES.items()))
+    await _set_rank(update, context, rank, rest)
+
+
+@need("повысить")
+async def cmd_demote(update, context):
+    await _set_rank(update, context, 0, list(context.args or []))
+
+
+@need("дк")
+async def cmd_access(update, context):
+    args = [a.lower() for a in (context.args or [])]
+    if not args:
+        lines = ["🔐 <b>Доступ к командам</b> (с какого ранга и выше)"]
+        for k in DEFAULT_RANKS:
+            lines.append(f"• {k} — {required_rank(k)} ({rank_title(required_rank(k))})")
+        lines.append("\nИзменить: «дк мут 2». Выдать ранг человеку: «повысить 2» ответом на сообщение.")
+        return await reply(update, "\n".join(lines))
+    if len(args) < 2 or not args[-1].isdigit():
+        return await reply(update, "Формат: «дк мут 2» (название команды и ранг от 1 до 8).")
+    key, rank = " ".join(args[:-1]), int(args[-1])
+    if key not in DEFAULT_RANKS:
+        return await reply(update, f"Не знаю команду «{esc(key)}». Доступны: " +
+                           ", ".join(DEFAULT_RANKS))
+    if not 1 <= rank <= MAX_RANK:
+        return await reply(update, "Ранг должен быть от 1 до 8.")
+    db.execute("INSERT INTO cmd_access(cmd,rank) VALUES(?,?) "
+               "ON CONFLICT(cmd) DO UPDATE SET rank=excluded.rank", (key, rank))
+    db.commit()
+    await reply(update, f"✅ Команда «{esc(key)}» теперь доступна с ранга {rank} "
+                        f"({esc(rank_title(rank))}) и выше.")
+
+
+@need("админы")
+async def cmd_admins(update, context):
+    only = None
+    for a in (context.args or []):
+        if a.isdigit():
+            only = int(a)
+    rows = db.execute("SELECT user_id, name, tag, arank FROM users WHERE arank>0 "
+                      "ORDER BY arank DESC, name").fetchall()
+    lines = ["👮 <b>Админы по рангам</b>"]
+    if only is None or only == MAX_RANK:
+        lines.append(f"{MAX_RANK} — {rank_title(MAX_RANK)}: @{OWNER_USERNAME} (владелец)")
+    for r in rows:
+        if only is not None and r["arank"] != only:
+            continue
+        lines.append(f"{r['arank']} — {rank_title(r['arank'])}: {link(r['user_id'], r['name'])}")
+    if len(lines) == 1:
+        lines.append("Пока никого. Выдать ранг: «повысить 2» ответом на сообщение.")
+    await reply(update, "\n".join(lines))
 
 
 # ============================ ОБЫЧНЫЕ СООБЩЕНИЯ ============================
@@ -1254,7 +1549,7 @@ async def handle_rep(update, context, m):
         if t:
             target_id, target_name = t.id, disp(t)
     if not target_id:
-        return await reply(update, "Ответь на сообщение участника: «+реп» или напиши «+реп @юз»")
+        return await reply(update, why_no_target(update, "Ответь на сообщение участника: «+реп» или напиши «+реп @юз»"))
     if target_id == giver.id:
         return await reply(update, "Себе репутацию ставить нельзя 😉")
     d = today()
@@ -1313,15 +1608,20 @@ USER_ALIASES = {
     "дуэль": cmd_duel, "кости": cmd_dice, "слоты": cmd_slots,
     "монетка": cmd_coin, "монета": cmd_coin,
 }
-# слово -> (команда, сколько слов-аргументов можно дописать)
-OWNER_ALIASES = {
-    "админка": (cmd_admin, 0), "админ панель": (cmd_admin, 0),
-    "мут": (cmd_mute, 1), "размут": (cmd_unmute, 0),
-    "бан": (cmd_ban, 0), "разбан": (cmd_unban, 1),
-    "тег": (cmd_tag, 5), "снять тег": (cmd_untag, 0),
-    "статистика": (cmd_stat, 0), "слова дня": (cmd_topwords, 0),
-    "итоги": (cmd_award, 0),
-    "запустить вопрос": (cmd_question, 0), "запустить викторину": (cmd_quiz, 0),
+# слово -> (команда, ключ доступа, сколько слов можно дописать)
+ADMIN_ALIASES = {
+    "админка": (cmd_admin, "админка", 0), "админ панель": (cmd_admin, "админка", 0),
+    "админы": (cmd_admins, "админы", 1),
+    "мут": (cmd_mute, "мут", 15), "размут": (cmd_unmute, "размут", 1),
+    "список мута": (cmd_mutelist, "список мута", 0), "муты": (cmd_mutelist, "список мута", 0),
+    "бан": (cmd_ban, "бан", 8), "разбан": (cmd_unban, "разбан", 1),
+    "тег": (cmd_tag, "тег", 5), "снять тег": (cmd_untag, "снять тег", 0),
+    "статистика": (cmd_stat, "статистика", 0), "слова дня": (cmd_topwords, "слова дня", 0),
+    "итоги": (cmd_award, "итоги", 0),
+    "запустить вопрос": (cmd_question, "запустить вопрос", 0),
+    "запустить викторину": (cmd_quiz, "запустить викторину", 0),
+    "повысить": (cmd_promote, "повысить", 3), "разжаловать": (cmd_demote, "повысить", 2),
+    "дк": (cmd_access, "дк", 6),
 }
 
 
@@ -1332,7 +1632,7 @@ def set_args(context, args):
         context._args = args
 
 
-async def run_alias(update, context, low):
+async def run_alias(update, context, low, text):
     clean = re.sub(r"[!.?,]+$", "", low).strip()
     fn = USER_ALIASES.get(clean)
     if fn:
@@ -1340,12 +1640,13 @@ async def run_alias(update, context, low):
         await fn(update, context)
         return True
     words = clean.split()
+    orig = re.sub(r"[!.?,]+$", "", text.strip()).split()
     for n in (2, 1):
         key = " ".join(words[:n])
-        item = OWNER_ALIASES.get(key)
-        if item and len(words) - n <= item[1]:
-            if is_owner(update.effective_user):
-                set_args(context, words[n:])
+        item = ADMIN_ALIASES.get(key)
+        if item and len(words) - n <= item[2]:
+            if has_rank(update.effective_user, item[1]):
+                set_args(context, orig[n:])
                 await item[0](update, context)
                 return True
             return False
@@ -1382,7 +1683,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if low in RP:
         return await handle_rp(update, context, low)
 
-    if await run_alias(update, context, low):
+    if await run_alias(update, context, low, text):
         return
 
     if low in ("профиль", "мой профиль"):
@@ -1464,6 +1765,8 @@ def main():
         ("ban", cmd_ban), ("unban", cmd_unban), ("tag", cmd_tag), ("untag", cmd_untag),
         ("stat", cmd_stat), ("topwords", cmd_topwords), ("award", cmd_award),
         ("question", cmd_question), ("quiz", cmd_quiz),
+        ("mutelist", cmd_mutelist), ("promote", cmd_promote), ("demote", cmd_demote),
+        ("access", cmd_access), ("admins", cmd_admins),
     ):
         app.add_handler(CommandHandler(name, fn))
     app.add_handler(MessageHandler(
