@@ -36,7 +36,7 @@ except Exception:
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 TOKEN = ""                    # вставь токен от @BotFather ИЛИ положи его в файл token.txt рядом с bot.py
-CHAT_ID = -5487423853           # основной чат
+CHAT_ID = -1004318004202          # основной чат
 TEST_CHAT_ID = 0                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
 OWNER_USERNAME = "bloya"        # владелец (без @)
 CHANNEL = "@clubClaveka"
@@ -88,7 +88,9 @@ HELP_TEXT = (
     "/quiztop — рейтинг викторины\n"
     "РП: обнять, ударить, погладить, дать пять, пожать руку, укусить, "
     "обнять крепко, пнуть (ответом на сообщение)\n"
-    "/анрег — выйти из созыва, /рег — вернуться"
+    "/анрег — выйти из созыва, /рег — вернуться\n\n"
+    "💡 Можно писать словами без слеша (сообщение целиком): "
+    "профиль, топ, неделя, месяц, квесты, дуэль, кости, слоты, монетка, помощь"
 )
 
 ADMIN_HELP = (
@@ -100,7 +102,9 @@ ADMIN_HELP = (
     "/stat — активность чата\n"
     "/topwords — о чём чат говорил сегодня (общие слова)\n"
     "/award — итоги прямо сейчас\n"
-    "/question, /quiz — запустить вручную"
+    "/question, /quiz — запустить вручную\n\n"
+    "💡 Словами (только от владельца): мут 30, размут, бан, разбан, тег Текст, "
+    "снять тег, статистика, слова дня, итоги, запустить вопрос, запустить викторину"
 )
 
 RANK_TITLES = [  # (с какого уровня, название)
@@ -720,7 +724,10 @@ async def cmd_help(update, context):
 
 
 async def cmd_id(update, context):
-    await update.effective_message.reply_text(f"ID этого чата: {update.effective_chat.id}")
+    cid = update.effective_chat.id
+    ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
+    await update.effective_message.reply_text(
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 3")
 
 
 def target_user(update):
@@ -1295,6 +1302,56 @@ async def handle_rp(update, context, key):
     await reply(update, text)
 
 
+# Команды обычными словами (сообщение целиком, без слеша)
+USER_ALIASES = {
+    "помощь": cmd_help, "команды": cmd_help, "хелп": cmd_help,
+    "топ": cmd_top, "топ дня": cmd_top,
+    "неделя": cmd_week, "топ недели": cmd_week,
+    "месяц": cmd_month, "топ месяца": cmd_month,
+    "квесты": cmd_quests, "задания": cmd_quests,
+    "рейтинг викторины": cmd_quiztop, "топ викторины": cmd_quiztop,
+    "дуэль": cmd_duel, "кости": cmd_dice, "слоты": cmd_slots,
+    "монетка": cmd_coin, "монета": cmd_coin,
+}
+# слово -> (команда, сколько слов-аргументов можно дописать)
+OWNER_ALIASES = {
+    "админка": (cmd_admin, 0), "админ панель": (cmd_admin, 0),
+    "мут": (cmd_mute, 1), "размут": (cmd_unmute, 0),
+    "бан": (cmd_ban, 0), "разбан": (cmd_unban, 1),
+    "тег": (cmd_tag, 5), "снять тег": (cmd_untag, 0),
+    "статистика": (cmd_stat, 0), "слова дня": (cmd_topwords, 0),
+    "итоги": (cmd_award, 0),
+    "запустить вопрос": (cmd_question, 0), "запустить викторину": (cmd_quiz, 0),
+}
+
+
+def set_args(context, args):
+    try:
+        context.args = args
+    except AttributeError:
+        context._args = args
+
+
+async def run_alias(update, context, low):
+    clean = re.sub(r"[!.?,]+$", "", low).strip()
+    fn = USER_ALIASES.get(clean)
+    if fn:
+        set_args(context, [])
+        await fn(update, context)
+        return True
+    words = clean.split()
+    for n in (2, 1):
+        key = " ".join(words[:n])
+        item = OWNER_ALIASES.get(key)
+        if item and len(words) - n <= item[1]:
+            if is_owner(update.effective_user):
+                set_args(context, words[n:])
+                await item[0](update, context)
+                return True
+            return False
+    return False
+
+
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg, user, chat = update.effective_message, update.effective_user, update.effective_chat
     if not msg or not user or user.is_bot or not msg.text:
@@ -1324,6 +1381,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if low in RP:
         return await handle_rp(update, context, low)
+
+    if await run_alias(update, context, low):
+        return
 
     if low in ("профиль", "мой профиль"):
         u = target_user(update) or user
