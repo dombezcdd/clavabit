@@ -772,7 +772,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 8")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 10")
 
 
 def why_no_target(update, usage):
@@ -1011,32 +1011,59 @@ async def count_gifts(bot, uid):
 NFT_RE = re.compile(r"(?:https?://)?t\.me/nft/([A-Za-z0-9]+)-(\d+)", re.I)
 
 
-def _frames_to_gif(frames, fps, out):
-    step = max(1, len(frames) // 90)          # не больше ~90 кадров
-    frames = frames[::step]
+def _cards_to_gif(items, out):
+    """items — список (lottie_json_str, bg). Рисует карточки как в подборках NFT:
+    скруглённые плитки с мягким свечением на тёмном фоне. Одна — по центру, несколько — сеткой."""
+    from PIL import Image, ImageDraw
+    from rlottie_python import LottieAnimation
+    k = len(items)
+    anims = [LottieAnimation.from_data(d) for d, _ in items]
+    totals = [max(1, a.lottie_animation_get_totalframe()) for a in anims]
+    fps = anims[0].lottie_animation_get_framerate() or 30
+    if k == 1:
+        S, W, H, cols, gap = 300, 640, 360, 1, 0
+    else:
+        S, gap, cols = 200, 14, min(3, k)
+        rows = (k + cols - 1) // cols
+        W, H = cols * S + (cols + 1) * gap, rows * S + (rows + 1) * gap
+    base = Image.new("RGB", (W, H), (22, 19, 21))
+    # фон каждой плитки: радиальное свечение + скругление
+    tiles = []
+    rad = Image.radial_gradient("L").resize((S, S))              # 0 центр -> 255 край
+    rmask = Image.new("L", (S * 3, S * 3), 0)
+    ImageDraw.Draw(rmask).rounded_rectangle((0, 0, S * 3 - 1, S * 3 - 1), radius=int(S * 3 * 0.24), fill=255)
+    rmask = rmask.resize((S, S), Image.LANCZOS)
+    for _, bg in items:
+        light = tuple(min(255, int(v * 1.18 + 12)) for v in bg)
+        edge = tuple(int(v * 0.82) for v in bg)
+        tile = Image.composite(Image.new("RGB", (S, S), edge), Image.new("RGB", (S, S), light),
+                               rad.point(lambda v: int(max(0, v - 40) * 255 / 215)))
+        tiles.append(tile)
+    pos = []
+    for i in range(k):
+        r, c = divmod(i, cols)
+        if k == 1:
+            pos.append(((W - S) // 2, (H - S) // 2))
+        else:
+            pos.append((gap + c * (S + gap), gap + r * (S + gap)))
+    n = max(totals)
+    step = max(1, n // 90)
+    gs = int(S * 0.8)
+    frames = []
+    for i in range(0, n, step):
+        canvas = base.copy()
+        for j, a in enumerate(anims):
+            fr = a.render_pillow_frame(frame_num=i % totals[j], width=gs, height=gs).convert("RGBA")
+            t = tiles[j].convert("RGBA")
+            t.alpha_composite(fr, ((S - gs) // 2, (S - gs) // 2))
+            canvas.paste(t.convert("RGB"), pos[j], rmask)
+        frames.append(canvas.convert("P", palette=Image.ADAPTIVE, colors=200))
     frames[0].save(out, save_all=True, append_images=frames[1:], loop=0,
                    duration=int(1000 / max(fps, 1) * step), disposal=2, optimize=False)
 
 
-def _lottie_to_gif(data, out, bg):
-    """data — JSON-строка Lottie. Требует пакеты rlottie-python и Pillow."""
-    from PIL import Image
-    from rlottie_python import LottieAnimation
-    anim = LottieAnimation.from_data(data)
-    total = anim.lottie_animation_get_totalframe()
-    fps = anim.lottie_animation_get_framerate() or 30
-    size = 384
-    frames = []
-    for i in range(total):
-        fr = anim.render_pillow_frame(frame_num=i, width=size, height=size).convert("RGBA")
-        base = Image.new("RGBA", fr.size, bg + (255,))
-        base.alpha_composite(fr)
-        frames.append(base.convert("RGB").convert("P", palette=Image.ADAPTIVE, colors=200))
-    _frames_to_gif(frames, fps, out)
-
-
-async def fetch_nft_gif(name, num):
-    """Возвращает путь к gif или None."""
+async def fetch_nft_source(name, num):
+    """Возвращает ('lottie', json_str, bg) | ('file', path, None) | None."""
     import gzip
     import httpx
     slug = f"{name}-{num}".lower()
@@ -1070,60 +1097,71 @@ async def fetch_nft_gif(name, num):
                 r = await c.get(u)
                 if r.status_code != 200 or not r.content:
                     continue
-                out = os.path.join(BASE, f"nft_{slug}.gif")
                 path = u.split("?")[0].lower()
                 if path.endswith((".mp4", ".gif")):
                     out = os.path.join(BASE, f"nft_{slug}" + path[-4:])
                     open(out, "wb").write(r.content)
-                    return out
+                    return ("file", out, None)
                 if path.endswith(".webm"):
                     continue
                 raw = r.content
                 if raw[:2] == b"\x1f\x8b":
                     raw = gzip.decompress(raw)
-                await asyncio.to_thread(_lottie_to_gif, raw.decode("utf-8"), out, bg)
-                return out
-            except ImportError:
-                print("NFT: не установлены rlottie-python/Pillow. Выполни: "
-                      "py -m pip install rlottie-python Pillow")
-                return None
+                return ("lottie", raw.decode("utf-8"), tuple(bg))
             except Exception as e:
                 print("NFT: источник не подошёл:", u, "->", repr(e)[:200])
     return None
 
 
-async def handle_nft(update, context, m, text):
-    name, num = m.group(1), m.group(2)
-    pretty = re.sub(r"(?<!^)(?=[A-Z])", " ", name)
-    url = f"https://t.me/nft/{name}-{num}"
+async def handle_nft(update, context, text):
+    found = []
+    for mm in NFT_RE.finditer(text):
+        key = (mm.group(1), mm.group(2))
+        if key not in found:
+            found.append(key)
+    found = found[:6]
+    caps = []
+    for name, num in found:
+        caps.append(f"🎁 <b>{esc(re.sub(r'(?<!^)(?=[A-Z])', ' ', name))}</b> #{esc(num)}")
+    caption = ("\n".join(caps) + "\n" +
+               f"Запросил: {link(update.effective_user.id, disp(update.effective_user))}")
+    gif, tmp = None, []
     try:
         await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
-        gif = await fetch_nft_gif(name, num)
+        srcs = [await fetch_nft_source(n, u) for n, u in found]
+        srcs = [s for s in srcs if s]
+        lot = [(s[1], s[2]) for s in srcs if s[0] == "lottie"]
+        files = [s[1] for s in srcs if s[0] == "file"]
+        tmp += files
+        if lot:
+            gif = os.path.join(BASE, f"nft_{update.effective_message.message_id}.gif")
+            tmp.append(gif)
+            await asyncio.to_thread(_cards_to_gif, lot, gif)
+        elif files:
+            gif = files[0]
+    except ImportError:
+        print("NFT: не установлены rlottie-python/Pillow. Выполни: py -m pip install rlottie-python Pillow")
     except Exception as e:
         print("NFT: ошибка:", repr(e)[:200])
         gif = None
     if gif:
         try:
             with open(gif, "rb") as f:
-                await update.effective_message.reply_animation(
-                    f, caption=f"🎁 <b>{esc(pretty)}</b> #{esc(num)}\n"
-                               f"Запросил: {link(update.effective_user.id, disp(update.effective_user))}",
-                    parse_mode=HTML)
+                await update.effective_message.reply_animation(f, caption=caption, parse_mode=HTML)
             return
         except Exception as e:
             print("NFT: не удалось отправить gif:", repr(e)[:200])
         finally:
-            try:
-                os.remove(gif)
-            except OSError:
-                pass
+            for p in tmp:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+    links = "\n".join(f"<a href=\"https://t.me/nft/{n}-{u}\">Открыть NFT {esc(n)} #{esc(u)}</a>" for n, u in found)
     await update.effective_message.reply_text(
-        f"🎁 <b>{esc(pretty)}</b> #{esc(num)}\n"
-        f"<a href=\"{url}\">Открыть NFT</a>\n"
-        f"Запросил: {link(update.effective_user.id, disp(update.effective_user))}",
-        parse_mode=HTML,
+        f"{caption}\n{links}", parse_mode=HTML,
         link_preview_options=LinkPreviewOptions(
-            url=url, prefer_large_media=True, show_above_text=True))
+            url=f"https://t.me/nft/{found[0][0]}-{found[0][1]}", prefer_large_media=True, show_above_text=True))
 
 
 @group_only
@@ -2066,7 +2104,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     nm = NFT_RE.search(text)
     if nm and (text.startswith("!") or low.startswith(("гиф", "gif", "нфт", "nft"))):
-        return await handle_nft(update, context, nm, text)
+        return await handle_nft(update, context, text)
 
     m = REP_RE.match(low)
     if m:
