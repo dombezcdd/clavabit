@@ -16,10 +16,10 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-from telegram import (ChatPermissions, LinkPreviewOptions, ReplyParameters,
-                      Update)
+from telegram import (ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup,
+                      LinkPreviewOptions, ReplyParameters, Update)
 from telegram.constants import ParseMode
-from telegram.ext import (Application, CommandHandler, ContextTypes,
+from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
                           MessageHandler, filters)
 
 try:
@@ -51,8 +51,7 @@ QUESTION_TIME = (10, 0)         # вопрос дня
 QUIZ_TIME = (18, 0)             # викторина
 SUMMARY_TIME = (23, 55)         # итоги дня
 QUIZ_MINUTES = 60
-AD_EVERY_MIN = 60               # реклама канала: раз в N минут
-INVITE_EVERY_MIN = 90           # напоминание про приглашения: раз в N минут
+PROMO_MIN_MIN, PROMO_MAX_MIN = 60, 120   # реклама/приглашения: одно сообщение раз в 1-2 часа (случайно)
 QUIET_HOURS = (1, 8)            # ночью (с 1 до 8) реклама и напоминания молчат
 QUEST_XP = 40
 QUEST_ALL_BONUS_XP = 100
@@ -92,6 +91,8 @@ HELP_TEXT = (
     "💞 Отношения (ответом на сообщение человека): «предложить отношения», потом он пишет "
     "«принять» или «отказать». Дальше: «моя пара», «свидание», «поцеловать», «обнять», "
     "«расстаться», «топ пар». Без внимания любовь угасает, и пара может распасться\n\n"
+    "🪙 Монеты: «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»\n"
+    "🚨 «репорт» (+причина) ответом на сообщение нарушителя — жалоба админам\n\n"
     "/анрег — выйти из созыва, /рег — вернуться\n\n"
     "💡 Можно писать словами без слеша (сообщение целиком): "
     "профиль, топ, неделя, месяц, квесты, дуэль, кости, слоты, монетка, помощь"
@@ -110,6 +111,7 @@ ADMIN_HELP = (
     "для отношений: добавить картинку отн поцелуй\n"
     "список картинок, очистить картинки обнять\n"
     "дк мут 2 — с какого ранга доступна команда («дк» без цифры покажет все), только 8 ранг\n"
+    "добавить товар Мишка 500 [кол-во], удалить товар 1, выдать монеты @юз 100, заказы, выдан 5\n"
     "статистика, слова дня, итоги, запустить вопрос, запустить викторину\n\n"
     "Должности: 1 Мл. модератор, 2 Старший модератор, 3 Главный модератор, 4 Стажер админ, "
     "5 Младший админ, 6 Старший админ, 7 Зам.Администрации, 8 Доверенное лицо\n\n"
@@ -242,11 +244,22 @@ CREATE TABLE IF NOT EXISTS pairs(
   since REAL, last_action REAL, gain_day TEXT, gain INTEGER DEFAULT 0, date_day TEXT);
 CREATE TABLE IF NOT EXISTS proposals(
   to_id INTEGER PRIMARY KEY, from_id INTEGER, created REAL, msg_id INTEGER);
+CREATE TABLE IF NOT EXISTS shop_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT -1,
+  active INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS orders(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, item TEXT, price INTEGER,
+  created REAL, status TEXT);
+CREATE TABLE IF NOT EXISTS reports(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, target_id INTEGER, target_name TEXT, msg_id INTEGER,
+  reporter TEXT, reason TEXT, created REAL, status TEXT);
 """)
-try:
-    db.execute("ALTER TABLE users ADD COLUMN arank INTEGER DEFAULT 0")
-except sqlite3.OperationalError:
-    pass
+for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEGER DEFAULT 0",
+             "duel_l INTEGER DEFAULT 0", "bonus_day TEXT DEFAULT ''"):
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN " + _col)
+    except sqlite3.OperationalError:
+        pass
 db.commit()
 
 
@@ -489,11 +502,13 @@ async def check_quests(bot, uid):
             out.append(f"✅ {link(uid, u['name'])} выполнил квест: "
                        f"{QUEST_TITLES[qid].format(n=target)} (+{QUEST_XP} опыта)")
             out += give_xp(uid, QUEST_XP)
+            give_coins(uid, 10)
     if len(done) >= 3 and "ALL" not in done:
         db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, "ALL"))
         db.commit()
         out.append(f"🏅 {link(uid, u['name'])} выполнил ВСЕ квесты дня! (+{QUEST_ALL_BONUS_XP} опыта)")
         out += give_xp(uid, QUEST_ALL_BONUS_XP)
+        give_coins(uid, 30)
     if out:
         try:
             await bot.send_message(CHAT_ID, "\n".join(out), parse_mode=HTML,
@@ -519,6 +534,8 @@ def add_counted(uid, message_id, is_reply):
                (message_id, uid, d))
     db.commit()
     bump(uid, "cnt")
+    if (u["total"] + 1) % 10 == 0:
+        give_coins(uid, 1)
     if is_reply:
         bump(uid, "replies")
     ev += give_xp(uid, 1)
@@ -652,6 +669,7 @@ async def try_quiz(update, text):
             db.execute("UPDATE users SET quiz_pts=quiz_pts+1 WHERE user_id=?", (uid,))
             db.commit()
             ev = give_xp(uid, QUIZ_XP)
+            give_coins(uid, 10)
             pts = urow(uid)["quiz_pts"]
             await update.effective_message.reply_text(
                 f"✅ Верно! {link(uid, urow(uid)['name'])} отвечает первым. "
@@ -684,19 +702,16 @@ async def tick(app):
         await send_text(bot, f"⌛ Время вышло. Правильный ответ: <b>{esc(q['a'][0])}</b>")
 
     quiet = QUIET_HOURS[0] <= n.hour < QUIET_HOURS[1]
-    for name, minutes, fn in (
-        ("ad", AD_EVERY_MIN, post_ad),
-        ("invite", INVITE_EVERY_MIN, post_invite),
-    ):
-        last = state_get("last_" + name)
-        if last is None:
-            state_set("last_" + name, time.time())
-            continue
-        if time.time() - float(last) >= minutes * 60:
-            if quiet:
-                continue
-            state_set("last_" + name, time.time())
-            await fn(bot)
+    last = state_get("last_promo")
+    if last is None:
+        state_set("last_promo", time.time())
+        state_set("promo_gap", random.randint(PROMO_MIN_MIN, PROMO_MAX_MIN))
+    elif not quiet and time.time() - float(last) >= float(state_get("promo_gap") or 90) * 60:
+        state_set("last_promo", time.time())
+        state_set("promo_gap", random.randint(PROMO_MIN_MIN, PROMO_MAX_MIN))
+        turn = int(float(state_get("promo_turn") or 0))
+        state_set("promo_turn", turn + 1)
+        await (post_ad if turn % 2 == 0 else post_invite)(bot)
 
 
 async def scheduler(app):
@@ -710,16 +725,21 @@ async def scheduler(app):
 
 
 async def post_ad(bot):
-    await send_text(bot, f"📢 Не забудьте подписаться на наш канал, чтобы не пропускать важные "
-                         f"розыгрыши! {esc(CHANNEL)}")
+    await send_text(bot, random.choice([
+        f"📢 Загляните к нам в канал {esc(CHANNEL)}, там проходят все розыгрыши",
+        f"📢 Подписывайтесь на {esc(CHANNEL)}, чтобы не пропустить розыгрыши и новости",
+        f"📢 Самое интересное у нас в канале {esc(CHANNEL)}. Подпишитесь, чтобы быть в курсе",
+    ]))
 
 
 async def post_invite(bot):
     ids = [r["user_id"] for r in db.execute(
         "SELECT user_id FROM users WHERE registered=1 AND total>0")]
-    text = ("🎁 Приглашайте друзей в чат — за приглашения можно получить подарки! "
-            f"Подробности: @{OWNER_USERNAME}\n"
-            "Не хотите получать напоминания — напишите /анрег")
+    text = random.choice([
+        "🎁 Зовите друзей в чат, за приглашения можно получить подарки",
+        "🎁 Пригласите друга в чат и получите подарок",
+        "🎁 Хотите подарок? Приводите друзей в чат",
+    ]) + f"\nПодробности у @{OWNER_USERNAME}\nЧтобы отключить напоминания, напишите /анрег"
     if not ids:
         await send_text(bot, text)
         return
@@ -772,7 +792,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 10")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 13")
 
 
 def why_no_target(update, usage):
@@ -927,7 +947,7 @@ async def cmd_slots(update, context):
     else:
         pts, text = 0, "Не повезло, попробуй ещё 🍀"
     if pts:
-        db.execute("UPDATE users SET game_pts=game_pts+? WHERE user_id=?", (pts, uid))
+        db.execute("UPDATE users SET game_pts=game_pts+?, coins=coins+? WHERE user_id=?", (pts, pts * 2, uid))
         db.commit()
     await reply(update, text)
     await played(context.bot, uid)
@@ -951,7 +971,7 @@ async def cmd_dice(update, context):
         res = "🤝 Ничья!"
     else:
         win = ra if va > vb else rb
-        db.execute("UPDATE users SET game_pts=game_pts+1 WHERE user_id=?", (win["user_id"],))
+        db.execute("UPDATE users SET game_pts=game_pts+1, coins=coins+2 WHERE user_id=?", (win["user_id"],))
         db.commit()
         res = f"🏆 Победил {link(win['user_id'], win['name'])}! (+1 игровое очко)"
     await reply(update, f"🎲 {esc(ra['name'])}: {va} — {esc(rb['name'])}: {vb}\n{res}")
@@ -1011,13 +1031,39 @@ async def count_gifts(bot, uid):
 NFT_RE = re.compile(r"(?:https?://)?t\.me/nft/([A-Za-z0-9]+)-(\d+)", re.I)
 
 
+def _pattern_tile(card_bytes, S):
+    """Берёт готовую карточку подарка (фон + узор + статичная модель), вырезает центр
+    с моделью и заливает его цветом фона. Остаётся фон с узором."""
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFilter, ImageStat
+    im = Image.open(BytesIO(card_bytes)).convert("RGB")
+    w, h = im.size
+    m = int(min(w, h) * 0.03)                      # срезаем рамку
+    im = im.crop((m, m, w - m, h - m)).resize((S, S), Image.LANCZOS)
+    cx = cy = S / 2
+    rx, ry = S * 0.37, S * 0.35                    # зона модели
+    band = Image.new("L", (S, S), 0)
+    d = ImageDraw.Draw(band)
+    d.ellipse((cx - rx * 1.22, cy - ry * 1.22, cx + rx * 1.22, cy + ry * 1.22), fill=255)
+    d.ellipse((cx - rx * 1.02, cy - ry * 1.02, cx + rx * 1.02, cy + ry * 1.02), fill=0)
+    med = tuple(int(v) for v in ImageStat.Stat(im, band).median)
+    light = tuple(min(255, int(v * 1.06 + 4)) for v in med)
+    fill = Image.new("RGB", (S, S), med)
+    glow = Image.radial_gradient("L").resize((S, S)).point(lambda v: 255 - min(255, v * 2))
+    fill = Image.composite(Image.new("RGB", (S, S), light), fill, glow.point(lambda v: v // 3))
+    hole = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(hole).ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=255)
+    hole = hole.filter(ImageFilter.GaussianBlur(S * 0.03))
+    return Image.composite(fill, im, hole)
+
+
 def _cards_to_gif(items, out):
     """items — список (lottie_json_str, bg). Рисует карточки как в подборках NFT:
     скруглённые плитки с мягким свечением на тёмном фоне. Одна — по центру, несколько — сеткой."""
     from PIL import Image, ImageDraw
     from rlottie_python import LottieAnimation
     k = len(items)
-    anims = [LottieAnimation.from_data(d) for d, _ in items]
+    anims = [LottieAnimation.from_data(it[0]) for it in items]
     totals = [max(1, a.lottie_animation_get_totalframe()) for a in anims]
     fps = anims[0].lottie_animation_get_framerate() or 30
     if k == 1:
@@ -1033,11 +1079,16 @@ def _cards_to_gif(items, out):
     rmask = Image.new("L", (S * 3, S * 3), 0)
     ImageDraw.Draw(rmask).rounded_rectangle((0, 0, S * 3 - 1, S * 3 - 1), radius=int(S * 3 * 0.24), fill=255)
     rmask = rmask.resize((S, S), Image.LANCZOS)
-    for _, bg in items:
+    for _, bg, card in items:
         light = tuple(min(255, int(v * 1.18 + 12)) for v in bg)
         edge = tuple(int(v * 0.82) for v in bg)
         tile = Image.composite(Image.new("RGB", (S, S), edge), Image.new("RGB", (S, S), light),
                                rad.point(lambda v: int(max(0, v - 40) * 255 / 215)))
+        if card:
+            try:
+                tile = _pattern_tile(card, S) or tile
+            except Exception as e:
+                print("NFT: узор не получился:", repr(e)[:150])
         tiles.append(tile)
     pos = []
     for i in range(k):
@@ -1068,9 +1119,17 @@ async def fetch_nft_source(name, num):
     import httpx
     slug = f"{name}-{num}".lower()
     page = f"https://t.me/nft/{name}-{num}"
-    cands, bg = [], (45, 45, 55)
+    cands, bg, card = [], (45, 45, 55), None
     async with httpx.AsyncClient(timeout=25, follow_redirects=True,
                                  headers={"User-Agent": "Mozilla/5.0"}) as c:
+        for suffix in (".large.jpg", ".medium.jpg", ".webp"):
+            try:
+                rr = await c.get(f"https://nft.fragment.com/gift/{slug}{suffix}")
+                if rr.status_code == 200 and len(rr.content) > 2000:
+                    card = rr.content
+                    break
+            except Exception:
+                pass
         try:
             r = await c.get(page)
             txt = html.unescape(r.text)
@@ -1080,8 +1139,11 @@ async def fetch_nft_source(name, num):
                 try:
                     from io import BytesIO
                     from PIL import Image
-                    im = Image.open(BytesIO((await c.get(mm.group(1))).content)).convert("RGB")
+                    raw_img = (await c.get(mm.group(1))).content
+                    im = Image.open(BytesIO(raw_img)).convert("RGB")
                     bg = im.getpixel((6, 6))
+                    if card is None:
+                        card = raw_img
                 except Exception:
                     pass
         except Exception as e:
@@ -1107,7 +1169,7 @@ async def fetch_nft_source(name, num):
                 raw = r.content
                 if raw[:2] == b"\x1f\x8b":
                     raw = gzip.decompress(raw)
-                return ("lottie", raw.decode("utf-8"), tuple(bg))
+                return ("lottie", raw.decode("utf-8"), tuple(bg), card)
             except Exception as e:
                 print("NFT: источник не подошёл:", u, "->", repr(e)[:200])
     return None
@@ -1130,7 +1192,7 @@ async def handle_nft(update, context, text):
         await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
         srcs = [await fetch_nft_source(n, u) for n, u in found]
         srcs = [s for s in srcs if s]
-        lot = [(s[1], s[2]) for s in srcs if s[0] == "lottie"]
+        lot = [(s[1], s[2], s[3]) for s in srcs if s[0] == "lottie"]
         files = [s[1] for s in srcs if s[0] == "file"]
         tmp += files
         if lot:
@@ -1181,13 +1243,16 @@ async def cmd_duel(update, context):
         return ", ".join(f"{k} {v}" for k, v in p.items() if v)
 
     win = ra if sa >= sb else rb
-    db.execute("UPDATE users SET game_pts=game_pts+2 WHERE user_id=?", (win["user_id"],))
+    lose = rb if win is ra else ra
+    db.execute("UPDATE users SET game_pts=game_pts+2, duel_w=duel_w+1, coins=coins+5 WHERE user_id=?",
+               (win["user_id"],))
+    db.execute("UPDATE users SET duel_l=duel_l+1 WHERE user_id=?", (lose["user_id"],))
     db.commit()
     await reply(update,
                 f"⚔️ <b>Дуэль профилей</b>\n"
                 f"{esc(ra['name'])}: <b>{sa}</b> ({fmt(pa)})\n"
                 f"{esc(rb['name'])}: <b>{sb}</b> ({fmt(pb)})\n\n"
-                f"🏆 Побеждает {link(win['user_id'], win['name'])} (+2 игровых очка)\n"
+                f"🏆 Побеждает {link(win['user_id'], win['name'])} (+2 игровых очка, +5 🪙)\n"
                 f"<i>В счёт идут: аватарка, описание, юзернейм, уровень, репутация, олдство, тег, "
                 f"NFT-подарки и обычные подарки из профиля + немного удачи. "
                 f"Скрытые подарки бот не видит. NFT-юзернейм отличить нельзя.</i>")
@@ -1203,6 +1268,7 @@ DEFAULT_RANKS = {
     "тег": 3, "снять тег": 3,
     "итоги": 4, "запустить вопрос": 4, "запустить викторину": 4,
     "добавить картинку": 2, "список картинок": 1, "очистить картинки": 3,
+    "добавить товар": 4, "удалить товар": 4, "выдать монеты": 5, "заказы": 2, "выдан": 2,
 }
 ADMIN_TITLES = {
     1: "Мл. модератор", 2: "Старший модератор", 3: "Главный модератор",
@@ -2024,6 +2090,288 @@ async def rel_daily(bot):
             log.exception("rel_daily")
 
 
+# ============================ МОНЕТЫ, МАГАЗИН, ЖАЛОБЫ ============================
+COIN = "🪙"
+BONUS_BASE = 20
+
+
+def give_coins(uid, n):
+    db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (n, uid))
+    db.commit()
+
+
+def coins_of(uid):
+    r = urow(uid)
+    return (r["coins"] or 0) if r else 0
+
+
+@group_only
+async def cmd_balance(update, context):
+    u = target_user(update) or update.effective_user
+    touch(u)
+    r = urow(u.id)
+    await reply(update, f"{COIN} Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b>\n"
+                        f"Монеты дают за сообщения (1 за каждые 10), квесты, викторину, дуэли, игры и «бонус».\n"
+                        f"Потратить: «магазин»")
+
+
+@group_only
+async def cmd_bonus(update, context):
+    uid = update.effective_user.id
+    r = urow(uid)
+    d = today()
+    if r["bonus_day"] == d:
+        return await reply(update, "Сегодняшний бонус уже получен. Приходи завтра 🎁")
+    amount = BONUS_BASE + min(r["streak"] or 0, 30)
+    db.execute("UPDATE users SET bonus_day=? WHERE user_id=?", (d, uid))
+    db.commit()
+    give_coins(uid, amount)
+    await reply(update, f"🎁 Ежедневный бонус: <b>+{amount}</b> {COIN} "
+                        f"(база {BONUS_BASE} + серия дней). Баланс: {coins_of(uid)}")
+
+
+@group_only
+async def cmd_topcoins(update, context):
+    rows = db.execute("SELECT user_id,name,coins FROM users WHERE coins>0 "
+                      "ORDER BY coins DESC LIMIT 10").fetchall()
+    if not rows:
+        return await reply(update, "Пока ни у кого нет монет. Пиши в чат и забирай «бонус» 🪙")
+    medals = ["🥇", "🥈", "🥉"]
+    lines = [f"{COIN} <b>Топ по монетам</b>"]
+    for i, r in enumerate(rows):
+        lines.append(f"{medals[i] if i < 3 else str(i + 1) + '.'} {link(r['user_id'], r['name'])} — {r['coins']}")
+    await reply(update, "\n".join(lines))
+
+
+@group_only
+async def cmd_duels(update, context):
+    u = target_user(update) or update.effective_user
+    touch(u)
+    r = urow(u.id)
+    w, l = r["duel_w"] or 0, r["duel_l"] or 0
+    lines = [f"⚔️ <b>Дуэли {esc(r['name'])}</b>: побед {w}, поражений {l}"
+             + (f" ({round(100 * w / (w + l))}%)" if w + l else "")]
+    top = db.execute("SELECT user_id,name,duel_w,duel_l FROM users WHERE duel_w>0 "
+                     "ORDER BY duel_w DESC LIMIT 5").fetchall()
+    if top:
+        lines.append("\n🏆 <b>Лучшие дуэлянты</b>")
+        for i, t in enumerate(top, 1):
+            lines.append(f"{i}. {link(t['user_id'], t['name'])} — {t['duel_w']} поб. / {t['duel_l']} пор.")
+    else:
+        lines.append("Дуэлей ещё не было. Ответь «дуэль» на сообщение соперника")
+    await reply(update, "\n".join(lines))
+
+
+@group_only
+async def cmd_shop(update, context):
+    items = db.execute("SELECT * FROM shop_items WHERE active=1 ORDER BY id").fetchall()
+    if not items:
+        return await reply(update, "🛍 Магазин пока пуст. Админы добавят товары командой "
+                                   "«добавить товар Название цена»")
+    lines = [f"🛍 <b>Магазин подарков</b>\nТвой баланс: <b>{coins_of(update.effective_user.id)}</b> {COIN}\n"]
+    for it in items:
+        stock = "" if it["stock"] < 0 else f" · осталось {it['stock']}"
+        lines.append(f"<b>{it['id']}.</b> {esc(it['name'])} — {it['price']} {COIN}{stock}")
+    lines.append("\nКупить: «купить 1» (номер товара). Приз выдаёт владелец вручную")
+    await reply(update, "\n".join(lines))
+
+
+@group_only
+async def cmd_buy(update, context):
+    args = list(context.args or [])
+    if not args or not args[0].isdigit():
+        return await reply(update, "Напиши: «купить 1» (номер товара из «магазин»)")
+    me = update.effective_user
+    touch(me)
+    it = db.execute("SELECT * FROM shop_items WHERE id=? AND active=1", (int(args[0]),)).fetchone()
+    if not it:
+        return await reply(update, "Нет такого товара. Список: «магазин»")
+    if it["stock"] == 0:
+        return await reply(update, "Товар закончился 😔")
+    bal = coins_of(me.id)
+    if bal < it["price"]:
+        return await reply(update, f"Не хватает монет: нужно {it['price']}, у тебя {bal} {COIN}")
+    db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (it["price"], me.id))
+    if it["stock"] > 0:
+        db.execute("UPDATE shop_items SET stock=stock-1 WHERE id=?", (it["id"],))
+    cur = db.execute("INSERT INTO orders(user_id,name,item,price,created,status) VALUES(?,?,?,?,?, 'new')",
+                     (me.id, disp(me), it["name"], it["price"], time.time()))
+    db.commit()
+    await reply(update, f"✅ {link(me.id, disp(me))} купил «{esc(it['name'])}» за {it['price']} {COIN}\n"
+                        f"Заказ <b>#{cur.lastrowid}</b>. {owner_mention()}, нужно выдать приз 🎁\n"
+                        f"Остаток: {coins_of(me.id)} {COIN}")
+
+
+def _parse_item(args):
+    """название... цена [остаток] -> (name, price, stock) или None"""
+    a = list(args)
+    stock = -1
+    if len(a) >= 3 and a[-1].isdigit() and a[-2].isdigit():
+        stock = int(a.pop())
+    if len(a) >= 2 and a[-1].isdigit():
+        price = int(a.pop())
+        return " ".join(a)[:60], price, stock
+    return None
+
+
+@need("добавить товар")
+async def cmd_item_add(update, context):
+    p = _parse_item(context.args or [])
+    if not p or p[1] < 1:
+        return await reply(update, "Формат: добавить товар Мишка 500 (название, цена) "
+                                   "или добавить товар Мишка 500 3 (ещё и количество)")
+    name, price, stock = p
+    cur = db.execute("INSERT INTO shop_items(name,price,stock,active) VALUES(?,?,?,1)", (name, price, stock))
+    db.commit()
+    await reply(update, f"✅ Товар <b>#{cur.lastrowid}</b> «{esc(name)}» — {price} {COIN}"
+                        + ("" if stock < 0 else f", количество {stock}"))
+
+
+@need("удалить товар")
+async def cmd_item_del(update, context):
+    a = list(context.args or [])
+    if not a or not a[0].isdigit():
+        return await reply(update, "Формат: удалить товар 1")
+    db.execute("UPDATE shop_items SET active=0 WHERE id=?", (int(a[0]),))
+    db.commit()
+    await reply(update, f"🗑 Товар #{a[0]} убран из магазина")
+
+
+@need("выдать монеты")
+async def cmd_coins_give(update, context):
+    uid, name, rest, err = resolve_target(update, list(context.args or []))
+    if err:
+        return await reply(update, err)
+    nums = [x for x in rest if re.fullmatch(r"-?\d+", x)]
+    if not uid or not nums:
+        return await reply(update, "Формат: выдать монеты @юзернейм 100 (или ответом: выдать монеты 100; "
+                                   "отрицательное число забирает)")
+    if not urow(uid):
+        return await reply(update, "Этого участника нет в базе бота.")
+    n = int(nums[0])
+    give_coins(uid, n)
+    await reply(update, f"{COIN} {link(uid, name)}: {'+' if n >= 0 else ''}{n}. Баланс: {coins_of(uid)}")
+
+
+@need("заказы")
+async def cmd_orders(update, context):
+    rows = db.execute("SELECT * FROM orders WHERE status='new' ORDER BY id LIMIT 30").fetchall()
+    if not rows:
+        return await reply(update, "Невыданных заказов нет ✅")
+    lines = ["📦 <b>Невыданные заказы</b>"]
+    for r in rows:
+        lines.append(f"#{r['id']} · {link(r['user_id'], r['name'])} · {esc(r['item'])} ({r['price']} {COIN})")
+    lines.append("\nПосле выдачи: «выдан 5»")
+    await reply(update, "\n".join(lines))
+
+
+@need("выдан")
+async def cmd_order_done(update, context):
+    a = list(context.args or [])
+    if not a or not a[0].isdigit():
+        return await reply(update, "Формат: выдан 5 (номер заказа из «заказы»)")
+    r = db.execute("SELECT * FROM orders WHERE id=?", (int(a[0]),)).fetchone()
+    if not r:
+        return await reply(update, "Нет такого заказа.")
+    db.execute("UPDATE orders SET status='done' WHERE id=?", (r["id"],))
+    db.commit()
+    await reply(update, f"✅ Заказ #{r['id']} выдан: {link(r['user_id'], r['name'])} получил «{esc(r['item'])}»")
+
+
+# ---------- жалобы ----------
+def _msg_link(chat_id, msg_id):
+    s = str(chat_id)
+    return f"https://t.me/c/{s[4:]}/{msg_id}" if s.startswith("-100") else ""
+
+
+@group_only
+async def cmd_report(update, context):
+    msg = update.effective_message
+    me = update.effective_user
+    tm = msg.reply_to_message
+    if not tm or not tm.from_user:
+        return await reply(update, "Ответь командой «репорт» на сообщение нарушителя. "
+                                   "Причину можно дописать: «репорт спам»")
+    t = tm.from_user
+    if t.is_bot or t.id == me.id:
+        return await reply(update, "На это сообщение жаловаться нельзя.")
+    if rank_of_id(t.id) > 0 or is_owner(t):
+        return await reply(update, "Это сообщение админа, пожаловаться нельзя.")
+    if not cooldown(("report", me.id), 60):
+        return await reply(update, "Подожди минуту перед следующей жалобой ⏳")
+    reason = " ".join(context.args or []).strip()[:200]
+    cur = db.execute("INSERT INTO reports(target_id,target_name,msg_id,reporter,reason,created,status) "
+                     "VALUES(?,?,?,?,?,?, 'open')",
+                     (t.id, disp(t), tm.message_id, disp(me), reason, time.time()))
+    db.commit()
+    rid = cur.lastrowid
+    ids = {r["user_id"] for r in db.execute("SELECT user_id FROM users WHERE arank>=1")}
+    oid = state_get("owner_id")
+    if oid:
+        ids.add(int(oid))
+    hidden = "".join(f'<a href="tg://user?id={u}">​</a>' for u in list(ids)[:30])
+    ln = _msg_link(update.effective_chat.id, tm.message_id)
+    text = (f"🚨 <b>Жалоба #{rid}</b>\nНа: {link(t.id, disp(t))}\nОт: {esc(disp(me))}\n"
+            f"Причина: {esc(reason or 'не указана')}"
+            + (f"\n<a href=\"{ln}\">Перейти к сообщению</a>" if ln else "") + hidden)
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔇 Мут 1ч", callback_data=f"rp:mute:{rid}"),
+         InlineKeyboardButton("⛔ Бан", callback_data=f"rp:ban:{rid}")],
+        [InlineKeyboardButton("🗑 Удалить сообщение", callback_data=f"rp:del:{rid}"),
+         InlineKeyboardButton("✖ Закрыть", callback_data=f"rp:close:{rid}")]])
+    await context.bot.send_message(update.effective_chat.id, text, parse_mode=HTML,
+                                   reply_markup=kb, link_preview_options=NOPREV)
+    try:
+        await msg.delete()          # убираем команду, чтобы не светить жалобщика (нужно право удалять)
+    except Exception:
+        pass
+
+
+async def on_report_btn(update, context):
+    q = update.callback_query
+    parts = (q.data or "").split(":")
+    if len(parts) != 3 or parts[0] != "rp" or not parts[2].isdigit():
+        return await q.answer()
+    act, rid = parts[1], int(parts[2])
+    r = db.execute("SELECT * FROM reports WHERE id=?", (rid,)).fetchone()
+    if not r or r["status"] != "open":
+        return await q.answer("Жалоба уже обработана", show_alert=True)
+    key = "бан" if act == "ban" else "мут"
+    if not has_rank(q.from_user, key):
+        return await q.answer("Нужен ранг модератора", show_alert=True)
+    chat_id = q.message.chat.id
+    result = ""
+    try:
+        if act in ("mute", "ban") and not can_act_on(q.from_user, r["target_id"]):
+            return await q.answer("У нарушителя ранг не ниже твоего", show_alert=True)
+        if act == "mute":
+            until = time.time() + 3600
+            await context.bot.restrict_chat_member(chat_id, r["target_id"], ChatPermissions.no_permissions(),
+                                                   until_date=int(until))
+            db.execute("INSERT OR REPLACE INTO mutes(user_id,name,until,reason,by_name,created) "
+                       "VALUES(?,?,?,?,?,?)", (r["target_id"], r["target_name"], until,
+                                               f"жалоба #{rid}: {r['reason'] or '-'}", disp(q.from_user), time.time()))
+            result = "🔇 Мут на 1 час"
+        elif act == "ban":
+            await context.bot.ban_chat_member(chat_id, r["target_id"])
+            result = "⛔ Бан"
+        elif act == "del":
+            await context.bot.delete_message(chat_id, r["msg_id"])
+            result = "🗑 Сообщение удалено"
+        else:
+            result = "✖ Закрыто без действий"
+    except Exception as e:
+        return await q.answer(f"Не вышло: {str(e)[:150]}", show_alert=True)
+    db.execute("UPDATE reports SET status='done' WHERE id=?", (rid,))
+    db.commit()
+    await q.answer("Готово")
+    try:
+        await q.edit_message_text((q.message.text_html or "") + f"\n\n{result} · {esc(disp(q.from_user))}",
+                                  parse_mode=HTML, link_preview_options=NOPREV)
+    except Exception:
+        pass
+
+
 # Команды обычными словами (сообщение целиком, без слеша)
 USER_ALIASES = {
     "помощь": cmd_help, "команды": cmd_help, "хелп": cmd_help,
@@ -2034,6 +2382,9 @@ USER_ALIASES = {
     "рейтинг викторины": cmd_quiztop, "топ викторины": cmd_quiztop,
     "дуэль": cmd_duel, "кости": cmd_dice, "слоты": cmd_slots,
     "монетка": cmd_coin, "монета": cmd_coin,
+    "баланс": cmd_balance, "кошелек": cmd_balance, "кошелёк": cmd_balance,
+    "магазин": cmd_shop, "шоп": cmd_shop, "топ монет": cmd_topcoins,
+    "дуэли": cmd_duels, "бонус": cmd_bonus, "репорт": cmd_report, "жалоба": cmd_report,
 }
 # слово -> (команда, ключ доступа, сколько слов можно дописать)
 ADMIN_ALIASES = {
@@ -2052,6 +2403,10 @@ ADMIN_ALIASES = {
     "добавить картинку": (cmd_pic_add, "добавить картинку", 4),
     "список картинок": (cmd_pic_list, "список картинок", 0),
     "очистить картинки": (cmd_pic_clear, "очистить картинки", 4),
+    "добавить товар": (cmd_item_add, "добавить товар", 12),
+    "удалить товар": (cmd_item_del, "удалить товар", 1),
+    "выдать монеты": (cmd_coins_give, "выдать монеты", 4),
+    "заказы": (cmd_orders, "заказы", 0), "выдан": (cmd_order_done, "выдан", 1),
 }
 
 
@@ -2109,6 +2464,15 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     m = REP_RE.match(low)
     if m:
         return await handle_rep(update, context, m)
+
+    mb = re.match(r"купить\s+(\d+)$", low)
+    if mb:
+        set_args(context, [mb.group(1)])
+        return await cmd_buy(update, context)
+    first = low.split()[0] if low.split() else ""
+    if first in ("репорт", "жалоба", "report") and len(low.split()) <= 12:
+        set_args(context, text.split()[1:])
+        return await cmd_report(update, context)
 
     if low in RP:
         return await handle_rp(update, context, low)
@@ -2202,6 +2566,10 @@ def main():
         ("question", cmd_question), ("quiz", cmd_quiz),
         ("mutelist", cmd_mutelist), ("promote", cmd_promote), ("demote", cmd_demote),
         ("access", cmd_access), ("admins", cmd_admins),
+        ("balance", cmd_balance), ("bonus", cmd_bonus), ("shop", cmd_shop), ("buy", cmd_buy),
+        ("topcoins", cmd_topcoins), ("duels", cmd_duels), ("report", cmd_report),
+        ("additem", cmd_item_add), ("delitem", cmd_item_del), ("givecoins", cmd_coins_give),
+        ("orders", cmd_orders), ("done", cmd_order_done),
     ):
         app.add_handler(CommandHandler(name, fn))
     app.add_handler(MessageHandler(
@@ -2210,6 +2578,7 @@ def main():
         app.add_handler(MessageReactionHandler(
             on_reaction_count,
             message_reaction_types=MessageReactionHandler.MESSAGE_REACTION_COUNT_UPDATED))
+    app.add_handler(CallbackQueryHandler(on_report_btn, pattern=r"^rp:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
