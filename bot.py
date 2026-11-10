@@ -82,15 +82,15 @@ HELP_TEXT = (
     "/top, /week, /month — топы активности\n"
     "/quests — ежедневные квесты\n"
     "+реп — ответом на сообщение или «+реп @юз»\n"
-    "/duel — дуэль профилей (ответом на сообщение)\n"
+    "/duel — дуэль профилей (ответом на сообщение или /duel @юз)\n"
     "!ссылка на NFT (t.me/nft/...) — карточка и анимация NFT; также «гиф ссылка»\n"
     "/dice — кости против другого (ответом), /slots, /coin\n"
     "/quiztop — рейтинг викторины\n"
-    "РП (ответом на сообщение, с гифкой): обнять, обнять крепко, поцеловать, погладить, "
+    "РП (ответом на сообщение или «обнять @юз», с гифкой; без искр): обнять, обнять крепко, поцеловать, погладить, "
     "дать пять, пожать руку, взять за руку, пощекотать, ткнуть, покормить, помахать, "
     "похвалить, ударить, пнуть, укусить, отшлёпать, убить\n"
-    "💞 Отношения (ответом на сообщение человека): «предложить отношения», потом кнопка «Да» "
-    "или «принять» (2 минуты). Общий баланс пары это искры 🔥: пополняют «поцеловать», «обнять», «свидание», "
+    "💞 Отношения (ответом или с @юз): «предложить отношения», потом кнопка «Да» "
+    "или «принять» (2 минуты). Общий баланс пары это искры 🔥: пополняют точечные команды для партнёра «.поцеловать», «.обнять», «.взять за руку» и т.д., «свидание», "
     "работа и покупка в профиле «моя пара», тратятся раз в сутки, на нуле пара распадается. "
     "Ещё: «список пар», «топ пар», «обида» (повтор снимает), «расстаться», «мойпол м» или «мойпол ж»\n\n"
     "🪙 Монеты: «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»\n"
@@ -820,7 +820,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 18")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 19")
 
 
 def why_no_target(update, usage):
@@ -842,7 +842,7 @@ def why_no_target(update, usage):
     return usage
 
 
-def target_user(update):
+def reply_user(update):
     """Пользователь из ответа на сообщение (не бот)."""
     m = update.effective_message
     if m.reply_to_message and m.reply_to_message.from_user:
@@ -850,6 +850,26 @@ def target_user(update):
         if not u.is_bot:
             touch(u)
             return u
+    return None
+
+
+def target_user(update):
+    """Цель: ответ на сообщение, иначе @юзернейм (или упоминание без юза) прямо в тексте."""
+    u = reply_user(update)
+    if u:
+        return u
+    m = update.effective_message
+    if not m or not getattr(m, "text", None):
+        return None
+    for e in (getattr(m, "entities", None) or []):
+        if getattr(e, "type", "") == "text_mention" and getattr(e, "user", None) and not e.user.is_bot:
+            touch(e.user)
+            return e.user
+    for tok in re.findall(r"@([A-Za-z0-9_]{4,32})", m.text):
+        r = find_by_username(tok)
+        if r:
+            return SimpleNamespace(id=r["user_id"], username=r["username"], is_bot=False,
+                                   full_name=r["name"] or tok)
     return None
 
 
@@ -1094,13 +1114,22 @@ def _cards_to_gif(items, out):
     anims = [LottieAnimation.from_data(it[0]) for it in items]
     totals = [max(1, a.lottie_animation_get_totalframe()) for a in anims]
     fps = anims[0].lottie_animation_get_framerate() or 30
+    FOOT = 56
     if k == 1:
-        S, W, H, cols, gap = 300, 640, 360, 1, 0
+        S, W, H, cols, gap = 460, 960, 540, 1, 0
+        H += FOOT
     else:
-        S, gap, cols = 200, 14, min(3, k)
+        S, gap, cols = 300, 18, min(3, k)
         rows = (k + cols - 1) // cols
-        W, H = cols * S + (cols + 1) * gap, rows * S + (rows + 1) * gap
+        W, H = cols * S + (cols + 1) * gap, rows * S + (rows + 1) * gap + FOOT
     base = Image.new("RGB", (W, H), (22, 19, 21))
+    try:
+        bd = ImageDraw.Draw(base)
+        ft = _cert_font("bold", 30)
+        tw = bd.textlength(CHAT_TAG, font=ft)
+        bd.text(((W - tw) / 2, H - FOOT + 10), CHAT_TAG, font=ft, fill=(235, 232, 236))
+    except Exception as e:
+        print("NFT: подпись не нарисована:", repr(e)[:100])
     # фон каждой плитки: радиальное свечение + скругление
     tiles = []
     rad = Image.radial_gradient("L").resize((S, S))              # 0 центр -> 255 край
@@ -1122,11 +1151,11 @@ def _cards_to_gif(items, out):
     for i in range(k):
         r, c = divmod(i, cols)
         if k == 1:
-            pos.append(((W - S) // 2, (H - S) // 2))
+            pos.append(((W - S) // 2, (H - FOOT - S) // 2))
         else:
             pos.append((gap + c * (S + gap), gap + r * (S + gap)))
     n = max(totals)
-    step = max(1, n // 90)
+    step = max(1, n // 75)
     gs = int(S * 0.8)
     frames = []
     for i in range(0, n, step):
@@ -1136,7 +1165,7 @@ def _cards_to_gif(items, out):
             t = tiles[j].convert("RGBA")
             t.alpha_composite(fr, ((S - gs) // 2, (S - gs) // 2))
             canvas.paste(t.convert("RGB"), pos[j], rmask)
-        frames.append(canvas.convert("P", palette=Image.ADAPTIVE, colors=200))
+        frames.append(canvas.convert("P", palette=Image.ADAPTIVE, colors=256, dither=Image.FLOYDSTEINBERG))
     frames[0].save(out, save_all=True, append_images=frames[1:], loop=0,
                    duration=int(1000 / max(fps, 1) * step), disposal=2, optimize=False)
 
@@ -1396,7 +1425,7 @@ def fmt_minutes(m):
 def resolve_target(update, args):
     """Цель: ответ на сообщение, иначе @юзернейм / id из аргументов.
     -> (uid, имя, оставшиеся аргументы, текст ошибки)"""
-    u = target_user(update)
+    u = reply_user(update)
     if u:
         return u.id, disp(u), args, None
     uid = name = None
@@ -1925,11 +1954,21 @@ async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None
                                   link_preview_options=NOPREV, reply_parameters=rp)
 
 
-async def handle_rp(update, context, key):
+async def handle_rp(update, context, key, dot=False):
     me = update.effective_user
-    other = target_user(update)
+    if dot:
+        pr = pair_of(me.id)
+        if not pr:
+            return await reply(update, "У тебя пока нет пары 💔 Сначала: «предложить отношения @юз». "
+                                       f"А обычное «{key} @юз» работает без пары.")
+        pid = partner_of(pr, me.id)
+        prow = urow(pid)
+        other = SimpleNamespace(id=pid, username=(prow["username"] if prow else None), is_bot=False,
+                                full_name=(prow["name"] if prow else str(pid)))
+    else:
+        other = target_user(update)
     if not other:
-        return await reply(update, f"Ответь словом «{key}» на сообщение того, к кому обращаешься")
+        return await reply(update, f"Напиши «{key} @юзернейм» или ответь словом «{key}» на сообщение человека")
     if other.id == me.id:
         return await reply(update, "Давай лучше кого-нибудь другого 🙂")
     if offended_block(me.id, other.id):
@@ -1937,7 +1976,7 @@ async def handle_rp(update, context, key):
     tpl, emoji = RP[key]
     text = (emoji + " " + tpl.format(a=link(me.id, disp(me)), b=link(other.id, disp(other)))).replace("(а)", ea(me.id))
     actions = [key]
-    gain = REL_GAIN.get(key)
+    gain = REL_GAIN.get(key) if dot else None
     if gain:
         res = rel_add(me.id, other.id, gain, key)
         if res is not None:
@@ -3829,19 +3868,22 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_args(context, text.split()[1:])
         return await cmd_report(update, context)
 
-    if low in RP:
-        return await handle_rp(update, context, low)
+    cmd_low = re.sub(r"\s+@\w{4,32}\s*$", "", low).strip()
+    if cmd_low.startswith(".") and cmd_low[1:].strip() in RP:
+        return await handle_rp(update, context, cmd_low[1:].strip(), dot=True)
+    if cmd_low in RP:
+        return await handle_rp(update, context, cmd_low)
 
-    if await handle_life(update, context, low, text):
+    if await handle_life(update, context, cmd_low, text):
         return
 
-    if await handle_relation(update, context, low):
+    if await handle_relation(update, context, cmd_low):
         return
 
     if await run_alias(update, context, low, text):
         return
 
-    if low in ("профиль", "мой профиль"):
+    if cmd_low in ("профиль", "мой профиль"):
         u = target_user(update) or user
         touch(u)
         return await reply(update, await build_profile(context.bot, urow(u.id)))
