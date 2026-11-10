@@ -820,7 +820,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 19")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 20")
 
 
 def why_no_target(update, usage):
@@ -1105,6 +1105,9 @@ def _pattern_tile(card_bytes, S):
     return Image.composite(fill, im, hole)
 
 
+NFT_LOCK = asyncio.Lock()
+
+
 def _cards_to_gif(items, out):
     """items — список (lottie_json_str, bg). Рисует карточки как в подборках NFT:
     скруглённые плитки с мягким свечением на тёмном фоне. Одна — по центру, несколько — сеткой."""
@@ -1116,10 +1119,10 @@ def _cards_to_gif(items, out):
     fps = anims[0].lottie_animation_get_framerate() or 30
     FOOT = 56
     if k == 1:
-        S, W, H, cols, gap = 460, 960, 540, 1, 0
+        S, W, H, cols, gap = 380, 800, 450, 1, 0
         H += FOOT
     else:
-        S, gap, cols = 300, 18, min(3, k)
+        S, gap, cols = 250, 16, min(3, k)
         rows = (k + cols - 1) // cols
         W, H = cols * S + (cols + 1) * gap, rows * S + (rows + 1) * gap + FOOT
     base = Image.new("RGB", (W, H), (22, 19, 21))
@@ -1155,7 +1158,7 @@ def _cards_to_gif(items, out):
         else:
             pos.append((gap + c * (S + gap), gap + r * (S + gap)))
     n = max(totals)
-    step = max(1, n // 75)
+    step = max(1, n // 55)
     gs = int(S * 0.8)
     frames = []
     for i in range(0, n, step):
@@ -1165,7 +1168,7 @@ def _cards_to_gif(items, out):
             t = tiles[j].convert("RGBA")
             t.alpha_composite(fr, ((S - gs) // 2, (S - gs) // 2))
             canvas.paste(t.convert("RGB"), pos[j], rmask)
-        frames.append(canvas.convert("P", palette=Image.ADAPTIVE, colors=256, dither=Image.FLOYDSTEINBERG))
+        frames.append(canvas.convert("P", palette=Image.ADAPTIVE, colors=256, dither=Image.NONE))
     frames[0].save(out, save_all=True, append_images=frames[1:], loop=0,
                    duration=int(1000 / max(fps, 1) * step), disposal=2, optimize=False)
 
@@ -1255,7 +1258,8 @@ async def handle_nft(update, context, text):
         if lot:
             gif = os.path.join(BASE, f"nft_{update.effective_message.message_id}.gif")
             tmp.append(gif)
-            await asyncio.to_thread(_cards_to_gif, lot, gif)
+            async with NFT_LOCK:
+                await asyncio.to_thread(_cards_to_gif, lot, gif)
         elif files:
             gif = files[0]
     except ImportError:
