@@ -14,6 +14,7 @@ import re
 import sqlite3
 import sys
 import time
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 from telegram import (ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup,
@@ -88,14 +89,15 @@ HELP_TEXT = (
     "РП (ответом на сообщение, с гифкой): обнять, обнять крепко, поцеловать, погладить, "
     "дать пять, пожать руку, взять за руку, пощекотать, ткнуть, покормить, помахать, "
     "похвалить, ударить, пнуть, укусить, отшлёпать, убить\n"
-    "💞 Отношения (ответом на сообщение человека): «предложить отношения», потом он пишет "
-    "«принять» или «отказать». Дальше: «моя пара», «свидание», «поцеловать», «обнять», "
-    "«расстаться», «топ пар». Без внимания любовь угасает, и пара может распасться\n\n"
+    "💞 Отношения (ответом на сообщение человека): «предложить отношения», потом кнопка «Да» "
+    "или «принять» (2 минуты). Общий баланс пары это искры 🔥: пополняют «поцеловать», «обнять», «свидание», "
+    "работа и покупка в профиле «моя пара», тратятся раз в сутки, на нуле пара распадается. "
+    "Ещё: «список пар», «топ пар», «обида» (повтор снимает), «расстаться», «мойпол м» или «мойпол ж»\n\n"
     "🪙 Монеты: «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»\n"
     "💼 Работа: «найти работу», «работать» (мини-игра на смене), «моя работа», «уволиться»\n"
     "📜 «свидетельство»: свидетельство пары или брака\n"
     "💍 Брак: «предложить встречаться» → через пару дней «предложить брак» (ответом на сообщение), "
-    "«принять брак», «семья», «развод»\n"
+    "«принять брак», «семья», «развод»; в браке «завести ребёнка», «дети», «назвать ребёнка Имя»\n"
     "🏠 «дом» (купить жильё, бонус к зарплате), 🐾 «купить питомца», «питомцы», «покормить питомца», "
     "«назвать питомца Имя»\n"
     "🚨 «репорт» (+причина) ответом на сообщение нарушителя — жалоба админам\n\n"
@@ -250,6 +252,11 @@ CREATE TABLE IF NOT EXISTS pairs(
   since REAL, last_action REAL, gain_day TEXT, gain INTEGER DEFAULT 0, date_day TEXT);
 CREATE TABLE IF NOT EXISTS proposals(
   to_id INTEGER PRIMARY KEY, from_id INTEGER, created REAL, msg_id INTEGER);
+CREATE TABLE IF NOT EXISTS kids(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, pair_id INTEGER, name TEXT, gender TEXT, born REAL);
+CREATE TABLE IF NOT EXISTS spark_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, pair_id INTEGER, delta INTEGER, reason TEXT, who TEXT,
+  ts REAL, bal INTEGER);
 CREATE TABLE IF NOT EXISTS job_tasks(
   user_id INTEGER PRIMARY KEY, job TEXT, kind TEXT, answer TEXT, target_id INTEGER,
   created REAL, expires REAL);
@@ -270,12 +277,13 @@ CREATE TABLE IF NOT EXISTS reports(
 for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEGER DEFAULT 0",
              "duel_l INTEGER DEFAULT 0", "bonus_day TEXT DEFAULT ''",
              "job TEXT DEFAULT ''", "job_shifts INTEGER DEFAULT 0", "last_work REAL DEFAULT 0",
-             "house TEXT DEFAULT ''"):
+             "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''"):
     try:
         db.execute("ALTER TABLE users ADD COLUMN " + _col)
     except sqlite3.OperationalError:
         pass
-for _col in ("married_at REAL DEFAULT 0", "anniv_day TEXT DEFAULT ''"):
+for _col in ("married_at REAL DEFAULT 0", "anniv_day TEXT DEFAULT ''", "actions INTEGER DEFAULT 0",
+             "offended INTEGER DEFAULT 0"):
     try:
         db.execute("ALTER TABLE pairs ADD COLUMN " + _col)
     except sqlite3.OperationalError:
@@ -812,7 +820,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 16")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 18")
 
 
 def why_no_target(update, usage):
@@ -1924,27 +1932,34 @@ async def handle_rp(update, context, key):
         return await reply(update, f"Ответь словом «{key}» на сообщение того, к кому обращаешься")
     if other.id == me.id:
         return await reply(update, "Давай лучше кого-нибудь другого 🙂")
+    if offended_block(me.id, other.id):
+        return await reply(update, "🙁 Ваша половинка обижена на вас, все действия недоступны.")
     tpl, emoji = RP[key]
-    text = emoji + " " + tpl.format(a=link(me.id, disp(me)), b=link(other.id, disp(other)))
+    text = (emoji + " " + tpl.format(a=link(me.id, disp(me)), b=link(other.id, disp(other)))).replace("(а)", ea(me.id))
     actions = [key]
     gain = REL_GAIN.get(key)
     if gain:
-        res = rel_add(me.id, other.id, gain)
+        res = rel_add(me.id, other.id, gain, key)
         if res is not None:
-            add, love = res
-            text += (f"\n💞 +{add} к любви ({love}/100)" if add
-                     else "\n💞 На сегодня лимит любви набран")
+            add, sparks = res
+            text += (f"\n🔥 +{add} искр (всего {sparks})" if add
+                     else "\n🔥 На сегодня лимит искр от действий набран")
             if key in REL_PIC:
                 actions.insert(0, "отн:" + REL_PIC[key])
     await send_with_pic(context.bot, update.effective_chat.id, text, actions,
                         reply_to=update.effective_message.message_id, api_cat=RP_API.get(key))
 
 
-# ============================ ОТНОШЕНИЯ ============================
-REL_START, REL_DAILY_CAP, REL_DATE_GAIN, REL_DECAY, REL_WARN_BELOW = 30, 30, 15, 5, 30
-REL_TIME = (10, 15)            # когда раз в день проверять, кто забросил партнёра
-REL_GAIN = {"поцеловать": 10, "обнять": 6, "обнять крепко": 8, "взять за руку": 5,
-            "погладить": 4, "покормить": 3, "пощекотать": 3, "похвалить": 3, "помахать": 1}
+# ============================ ОТНОШЕНИЯ (искры) ============================
+REL_START, REL_DAILY_CAP, REL_DATE_GAIN = 100, 300, 80     # искры: старт, лимит в сутки с действий, свидание
+REL_ASK_SEC = 120                                           # сколько живёт предложение (2 минуты)
+SPARK_RATE = 2                                              # 1 монета = 2 искры
+KID_COST, KIDS_MAX = 300, 4
+REL_TIME = (10, 15)            # когда раз в день списывать содержание
+LEVELS = [(0, "Первые искры"), (300, "Тёплые чувства"), (800, "Крепкая связь"), (1500, "Горячая любовь"),
+          (2500, "Родные души"), (4000, "Вместе навсегда"), (6000, "Пара мечты"), (9000, "Легенда чата")]
+REL_GAIN = {"поцеловать": 50, "обнять": 30, "обнять крепко": 40, "взять за руку": 25,
+            "погладить": 20, "покормить": 15, "пощекотать": 15, "похвалить": 15, "помахать": 5}
 REL_PIC = {"поцеловать": "поцелуй", "обнять": "объятие", "обнять крепко": "объятие"}
 REL_EVENTS = {
     "предложение": "кто-то предложил отношения",
@@ -1952,25 +1967,65 @@ REL_EVENTS = {
     "поцелуй": "партнёры целуются (команда «поцеловать»)",
     "объятие": "партнёры обнимаются (команды «обнять»)",
     "свидание": "команда «свидание»",
-    "скучаю": "напоминание: давно не было внимания",
+    "скучаю": "напоминание: искры на исходе",
     "расставание": "расставание",
     "предложение брака": "кто-то предложил брак",
     "свадьба": "свадьба",
     "развод": "развод",
     "годовщина": "годовщина свадьбы",
+    "ребёнок": "рождение ребёнка",
+    "обида": "кто-то обиделся",
 }
+REL_TXT_PROPOSE = [
+    "💌 {a} признаётся {b} в чувствах и предлагает быть вместе.\nСердце бьётся чаще: нажмите «Да» или «Нет». Запрос действителен 2 минуты.",
+    "💘 {a} протягивает руку и сердце: {b}, станем парой?\nОтвет ждут 2 минуты: кнопка «Да», «Нет» или слова «принять» и «отказать».",
+    "🌹 Для {b} есть особое послание: {a} мечтает встречаться!\nУ вас 2 минуты, чтобы ответить: «Да» или «Нет».",
+]
+REL_TXT_ACCEPT = [
+    "💞 Два сердца нашли друг друга: {a} и {b} теперь пара!",
+    "💖 Свершилось! {a} и {b} вместе. Пусть это будет красивая история.",
+    "🌷 {a} и {b} теперь вместе. Берегите друг друга и не забывайте про свидания.",
+]
+REL_TXT_DECLINE = [
+    "💔 {b} мягко отказал{ea} {a}. Бывает, зато теперь всё ясно.",
+    "🥀 Сердце {a} дрогнуло: {b} ответил{ea} «нет». Но всё ещё впереди.",
+    "🌧 {b} пока не готов{ea} к отношениям с {a}. Дружба тоже красиво.",
+]
 PROPOSE = {"предложить отношения", "предложить встречаться", "встречаться"}
 ACCEPT = {"принять", "принимаю", "согласна", "согласен"}
 DECLINE = {"отказать", "отказываюсь", "отказаться"}
-LEAVE = {"расстаться", "расстаёмся", "расстаемся", "порвать отношения"}
-STATUS_SELF = {"моя пара", "мои отношения"}
+LEAVE = {"расстаться", "расстаёмся", "расстаемся", "порвать отношения", "расторгнуть"}
+STATUS_SELF = {"моя пара", "мои отношения", "отн я", "профиль пары"}
 STATUS_OTHER = {"пара", "отношения"}   # только ответом на сообщение человека
 DATE_WORDS = {"свидание", "пойти на свидание"}
 TOPPAIRS = {"топ пар"}
+LIST_WORDS = {"список пар", "все пары"}
+OFFEND_WORDS = {"обида", "обидеться", "я обиделся", "я обиделась"}
+KID_WORDS = {"завести ребёнка", "завести ребенка", "родить ребёнка"}
+KIDS_LIST_WORDS = {"дети", "мои дети", "наши дети"}
+SONS = ["Артём", "Матвей", "Лев", "Тимур", "Ян", "Макс", "Платон", "Мирон"]
+DAUGHTERS = ["Аня", "Соня", "Мия", "Ева", "Алиса", "Вера", "Лея", "Майя"]
+
+# перевод старых значений «любви» (0 до 100) в искры, один раз
+if not state_get("sparks_v1"):
+    db.execute("UPDATE pairs SET love=love*5")
+    db.commit()
+    state_set("sparks_v1", "1")
+
+
+def ea(uid):
+    """окончание по полу: '' (м), 'а' (ж) или '(а)', если пол не указан"""
+    r = urow(uid)
+    g = (r["gender"] if r and "gender" in r.keys() else "") or ""
+    return "" if g == "м" else "а" if g == "ж" else "(а)"
 
 
 def pair_of(uid):
     return db.execute("SELECT * FROM pairs WHERE a=? OR b=?", (uid, uid)).fetchone()
+
+
+def pair_by_id(pid):
+    return db.execute("SELECT * FROM pairs WHERE id=?", (pid,)).fetchone()
 
 
 def partner_of(row, uid):
@@ -1982,38 +2037,323 @@ def uname(uid):
     return r["name"] if r else str(uid)
 
 
-def love_bar(n):
-    full = max(0, min(10, round(n / 10)))
-    return "💗" * full + "🤍" * (10 - full) + f" {n}/100"
+def spark_level(n):
+    lvl = 1
+    for i, (thr, _) in enumerate(LEVELS, 1):
+        if n >= thr:
+            lvl = i
+    return lvl
 
 
-def rel_add(uid, other, amount):
-    """Начислить любовь, если uid и other — пара. -> (начислено, всего) или None."""
+def kids_of(pid):
+    return db.execute("SELECT * FROM kids WHERE pair_id=? ORDER BY id", (pid,)).fetchall()
+
+
+def upkeep(row):
+    base = 10 * spark_level(row["love"])
+    base *= 1 + 0.1 * len(kids_of(row["id"]))
+    if row["married_at"]:
+        base *= 0.7
+    return max(5, int(base))
+
+
+def spark_line(row):
+    lvl = spark_level(row["love"])
+    return (f"🔥 Искры: <b>{row['love']}</b> · {LEVELS[lvl - 1][1]} (ур. {lvl})\n"
+            f"📈 Расход в сутки: {upkeep(row)}")
+
+
+def spark_add(pid, delta, reason, who=""):
+    row = pair_by_id(pid)
+    if not row:
+        return 0
+    new = max(0, row["love"] + delta)
+    db.execute("UPDATE pairs SET love=? WHERE id=?", (new, pid))
+    db.execute("INSERT INTO spark_log(pair_id,delta,reason,who,ts,bal) VALUES(?,?,?,?,?,?)",
+               (pid, new - row["love"], reason, who, time.time(), new))
+    db.commit()
+    return new
+
+
+def rel_add(uid, other, amount, reason="действие"):
+    """Начислить искры за действие, если uid и other пара -> (начислено, всего) или None."""
     row = pair_of(uid)
     if not row or partner_of(row, uid) != other:
         return None
     d = today()
     gain = row["gain"] if row["gain_day"] == d else 0
     add = max(0, min(amount, REL_DAILY_CAP - gain))
-    love = min(100, row["love"] + add)
-    db.execute("UPDATE pairs SET love=?, gain=?, gain_day=?, last_action=? WHERE id=?",
-               (love, gain + add, d, time.time(), row["id"]))
+    db.execute("UPDATE pairs SET gain=?, gain_day=?, last_action=?, actions=actions+1 WHERE id=?",
+               (gain + add, d, time.time(), row["id"]))
     db.commit()
-    return add, love
+    new = spark_add(row["id"], add, reason, uname(uid)) if add else row["love"]
+    return add, new
+
+
+def fmt_dur(sec):
+    days = int(sec // 86400)
+    if days >= 30:
+        return f"{days // 30} мес. {days % 30} д."
+    if days >= 1:
+        return f"{days} д. {int(sec % 86400 // 3600)} ч."
+    return f"{int(sec // 3600)} ч. {int(sec % 3600 // 60)} мин."
+
+
+def offended_block(me_id, other_id):
+    row = pair_of(me_id)
+    return bool(row and partner_of(row, me_id) == other_id and row["offended"]
+                and row["offended"] != me_id)
+
+
+def delete_pair(pid):
+    db.execute("DELETE FROM pairs WHERE id=?", (pid,))
+    db.execute("DELETE FROM kids WHERE pair_id=?", (pid,))
+    db.commit()
+
+
+def pair_profile_text(row, uid):
+    p = partner_of(row, uid)
+    kids = kids_of(row["id"])
+    sons = sum(1 for k in kids if k["gender"] == "м")
+    me_r, p_r = urow(uid), urow(p)
+    hs = [HOUSES[r["house"]][0] for r in (me_r, p_r) if r and r["house"] in HOUSES]
+    pets = db.execute("SELECT * FROM pets WHERE owner IN (?,?)", (uid, p)).fetchall()
+    lines = [f"❤️ Твоя половинка: {link(p, uname(p))}", f"🆔 ID отношений: {row['id']}"]
+    if row["married_at"]:
+        lines.append(f"💍 В браке с {fmt_when(row['married_at'])}")
+    lines.append(spark_line(row))
+    lines.append(f"🕙 Длительность: {fmt_dur(time.time() - row['since'])}")
+    if hs:
+        lines.append("🏠 Дом: " + ", ".join(hs[:1]))
+    if pets:
+        lines.append("🐾 Питомцы: " + ", ".join(esc(x["name"]) for x in pets))
+    lines.append(f"👶 Сыновья: {sons}\n👩 Дочери: {len(kids) - sons}")
+    lines.append(f"🎯 Действий: {row['actions'] or 0}")
+    if row["offended"]:
+        lines.append(f"🙁 {esc(uname(row['offended']))} обиделся(ась)")
+    return "\n".join(lines)
+
+
+def pair_kb(uid):
+    B = InlineKeyboardButton
+    return InlineKeyboardMarkup([
+        [B("💰 Купить искры", callback_data=f"rel:menu:buy:{uid}"), B("🏠 Дом", callback_data=f"rel:menu:house:{uid}")],
+        [B("🐾 Питомцы", callback_data=f"rel:menu:pets:{uid}"), B("👶 Дети", callback_data=f"rel:menu:kids:{uid}")],
+        [B("📊 История", callback_data=f"rel:menu:hist:{uid}")]])
+
+
+async def rel_answer(bot, chat_id, me_id, accept, reply_to=None):
+    """Ответ на предложение отношений (слова или кнопки). True, если предложение было."""
+    pr = db.execute("SELECT * FROM proposals WHERE to_id=?", (me_id,)).fetchone()
+    if not pr:
+        return False
+    db.execute("DELETE FROM proposals WHERE to_id=?", (me_id,))
+    db.commit()
+    a = pr["from_id"]
+
+    async def out(text, pic=None):
+        await send_with_pic(bot, chat_id, text, ["отн:" + pic] if pic else [], reply_to=reply_to)
+
+    if time.time() - pr["created"] > REL_ASK_SEC:
+        await out("⌛ Время на ответ вышло (2 минуты), предложение отменено.")
+        return True
+    if not accept:
+        await out(random.choice(REL_TXT_DECLINE).format(a=link(a, uname(a)), b=link(me_id, uname(me_id)),
+                                                         ea=ea(me_id)))
+    elif pair_of(a) or pair_of(me_id):
+        await out("Кто-то из вас уже в отношениях.")
+    else:
+        cur = db.execute("INSERT INTO pairs(a,b,love,since,last_action) VALUES(?,?,?,?,?)",
+                         (a, me_id, REL_START, time.time(), time.time()))
+        db.execute("INSERT INTO spark_log(pair_id,delta,reason,who,ts,bal) VALUES(?,?,?,?,?,?)",
+                   (cur.lastrowid, REL_START, "начало отношений", "", time.time(), REL_START))
+        db.commit()
+        txt = (random.choice(REL_TXT_ACCEPT).format(a=link(a, uname(a)), b=link(me_id, uname(me_id))) +
+               f"\n🔥 Искры: {REL_START} (общий баланс пары, они тратятся раз в сутки)\n"
+               f"Пополняйте искры: «поцеловать», «обнять», «свидание», задания на работе. "
+               f"Профиль: «моя пара»")
+        if not await send_certificate(bot, chat_id, pair_of(me_id), False, reply_to, caption=txt):
+            await out(txt, "пара")
+    return True
+
+
+async def rel_leave_ask(update, context):
+    me = update.effective_user
+    row = pair_of(me.id)
+    if not row:
+        return False
+    p = partner_of(row, me.id)
+    cost = f"\nРазвод в браке стоит {DIVORCE_COST} 🪙." if row["married_at"] else ""
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("💔 Расторгнуть", callback_data=f"rel:leave:{me.id}"),
+                                InlineKeyboardButton("Отмена", callback_data=f"rel:cancel:{me.id}")]])
+    await send_with_pic(context.bot, update.effective_chat.id,
+                        f"💔 {link(me.id, disp(me))}, вы действительно хотите расторгнуть отношения с "
+                        f"{link(p, uname(p))}? Это действие навсегда, вместе с парой пропадут искры и дети."
+                        + cost, [], reply_to=update.effective_message.message_id, markup=kb)
+    return True
+
+
+async def rel_leave_do(bot, chat_id, uid, reply_to=None):
+    row = pair_of(uid)
+    if not row:
+        return False
+    p = partner_of(row, uid)
+    married = bool(row["married_at"])
+    if married:
+        if coins_of(uid) < DIVORCE_COST:
+            await send_with_pic(bot, chat_id, f"Развод стоит {DIVORCE_COST} 🪙, а у тебя {coins_of(uid)}.", [],
+                                reply_to=reply_to)
+            return True
+        give_coins(uid, -DIVORCE_COST)
+    delete_pair(row["id"])
+    await send_with_pic(bot, chat_id,
+                        f"💔 {link(p, uname(p))}, к сожалению, {link(uid, uname(uid))} решил{ea(uid)} "
+                        f"расторгнуть ваши отношения" + (f" (−{DIVORCE_COST} 🪙)." if married else "."),
+                        ["отн:развод" if married else "отн:расставание"], reply_to=reply_to,
+                        api_cat="cry")
+    return True
+
+
+async def rel_offend(update, context):
+    me = update.effective_user
+    row = pair_of(me.id)
+    if not row:
+        return False
+    p = partner_of(row, me.id)
+    if row["offended"] == me.id:
+        db.execute("UPDATE pairs SET offended=0 WHERE id=?", (row["id"],))
+        db.commit()
+        txt = f"😊 {link(p, uname(p))}, твоя половинка больше не обижается. Все действия снова доступны!"
+    elif row["offended"]:
+        txt = "🙁 Ваша половинка уже обижена на вас, сначала помиритесь."
+    else:
+        db.execute("UPDATE pairs SET offended=? WHERE id=?", (me.id, row["id"]))
+        db.commit()
+        txt = (f"🙁 {link(p, uname(p))}, твоя половинка обиделась. Все действия будут временно заблокированы, "
+               f"пока она не передумает.\n💭 {link(me.id, disp(me))}, чтобы перестать обижаться, "
+               f"введите эту команду ещё раз.")
+    await send_with_pic(context.bot, update.effective_chat.id, txt, ["отн:обида"],
+                        reply_to=update.effective_message.message_id)
+    return True
+
+
+async def rel_kid_ask(update, context):
+    me = update.effective_user
+    row = pair_of(me.id)
+    if not row or not row["married_at"]:
+        return await reply(update, "Дети бывают только в браке 💍. Сначала «предложить брак».")
+    if len(kids_of(row["id"])) >= KIDS_MAX:
+        return await reply(update, f"В семье уже {KIDS_MAX} детей, это максимум 👨‍👩‍👧‍👦")
+    if row["love"] < KID_COST + 100:
+        return await reply(update, f"Ребёнок стоит {KID_COST} искр, а в запасе должно остаться ещё 100. "
+                                   f"Сейчас у пары {row['love']}. Пополните искры.")
+    p = partner_of(row, me.id)
+    state_set(f"kidreq:{p}", f"{me.id}:{time.time()}")
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("👶 Да", callback_data=f"rel:kidyes:{p}"),
+                                InlineKeyboardButton("Нет", callback_data=f"rel:kidno:{p}")]])
+    await send_with_pic(context.bot, update.effective_chat.id,
+                        f"👶 {link(me.id, disp(me))} мечтает о ребёнке! {link(p, uname(p))}, вы согласны? "
+                        f"(2 минуты, стоит {KID_COST} искр)", [], reply_to=update.effective_message.message_id,
+                        markup=kb)
+
+
+async def rel_kid_born(bot, chat_id, uid, reply_to=None):
+    row = pair_of(uid)
+    req = state_get(f"kidreq:{uid}")
+    state_del(f"kidreq:{uid}")
+    if not row or not req or time.time() - float(req.split(":")[1]) > REL_ASK_SEC:
+        return "Время вышло или запрос уже не актуален."
+    if not row["married_at"] or len(kids_of(row["id"])) >= KIDS_MAX or row["love"] < KID_COST + 100:
+        return "Сейчас это невозможно."
+    g = random.choice(["м", "ж"])
+    name = random.choice(SONS if g == "м" else DAUGHTERS)
+    db.execute("INSERT INTO kids(pair_id,name,gender,born) VALUES(?,?,?,?)", (row["id"], name, g, time.time()))
+    db.commit()
+    spark_add(row["id"], -KID_COST, "рождение ребёнка", uname(uid))
+    a, b = row["a"], row["b"]
+    await send_with_pic(bot, chat_id,
+                        f"👶🎉 В семье пополнение! У {link(a, uname(a))} и {link(b, uname(b))} "
+                        f"родил{'ся сын' if g == 'м' else 'ась дочь'}: <b>{esc(name)}</b>\n"
+                        f"Переименовать: «назвать ребёнка Имя». Расход искр вырос на 10%.",
+                        ["отн:ребёнок"], reply_to=reply_to, api_cat="happy")
+    return None
+
+
+async def rel_kids_list(update, context):
+    row = pair_of(update.effective_user.id)
+    kids = kids_of(row["id"]) if row else []
+    if not kids:
+        return await reply(update, "Детей пока нет. В браке: «завести ребёнка» 👶")
+    lines = ["👨‍👩‍👧‍👦 <b>Дети</b>"]
+    for k in kids:
+        lines.append(f"{'👦' if k['gender'] == 'м' else '👧'} {esc(k['name'])}, {fmt_dur(time.time() - k['born'])}")
+    await reply(update, "\n".join(lines))
+
+
+async def rel_kid_rename(update, context, new):
+    row = pair_of(update.effective_user.id)
+    kids = kids_of(row["id"]) if row else []
+    new = new.strip()[:20]
+    if not kids:
+        return await reply(update, "У вас нет детей.")
+    if not new:
+        return await reply(update, "Напиши имя: «назвать ребёнка Артём»")
+    db.execute("UPDATE kids SET name=? WHERE id=?", (new, kids[-1]["id"]))
+    db.commit()
+    await reply(update, f"✏️ Теперь младшего зовут <b>{esc(new)}</b>")
+
+
+def hist_text(pid):
+    rows = db.execute("SELECT * FROM spark_log WHERE pair_id=? ORDER BY id DESC LIMIT 10", (pid,)).fetchall()
+    row = pair_by_id(pid)
+    if not rows:
+        return "История пока пуста."
+    lines = [f"📊 <b>История искр</b>\n🔥 Текущий баланс: {row['love']}\n"]
+    for r in rows:
+        mark = "📈" if r["delta"] >= 0 else "📉"
+        who = f" • {esc(r['who'])}" if r["who"] else ""
+        lines.append(f"{mark} {r['delta']:+d} | {esc(r['reason'])}{who}\n   {fmt_when(r['ts'])} | баланс {r['bal']}")
+    return "\n".join(lines)
+
+
+def top_text(cat):
+    if cat == "act":
+        rows = db.execute("SELECT * FROM pairs ORDER BY actions DESC LIMIT 10").fetchall()
+        val = lambda r: f"{r['actions'] or 0} действий"
+        title = "🔄 Общая активность"
+    elif cat == "sp":
+        rows = db.execute("SELECT * FROM pairs ORDER BY love DESC LIMIT 10").fetchall()
+        val = lambda r: f"{r['love']} 🔥"
+        title = "🔥 Искры"
+    else:
+        rows = db.execute("SELECT * FROM pairs ORDER BY since ASC LIMIT 10").fetchall()
+        val = lambda r: fmt_dur(time.time() - r["since"])
+        title = "⏳ Длительность"
+    if not rows:
+        return "Пока нет ни одной пары 💔"
+    return f"🏆 <b>Топ по «{title}»</b>\n\n" + "\n".join(
+        f"{i}. {esc(uname(r['a']))} + {esc(uname(r['b']))} — {val(r)}" for i, r in enumerate(rows, 1))
+
+
+def top_kb(uid):
+    B = InlineKeyboardButton
+    return InlineKeyboardMarkup([[B("🔄 Общая активность", callback_data=f"rel:top:act:{uid}")],
+                                 [B("🔥 Искры", callback_data=f"rel:top:sp:{uid}")],
+                                 [B("⏳ Длительность", callback_data=f"rel:top:dur:{uid}")]])
 
 
 async def handle_relation(update, context, low):
     clean = re.sub(r"[!.?,]+$", "", low).strip()
     if not (clean in PROPOSE or clean in ACCEPT or clean in DECLINE or clean in LEAVE
             or clean in STATUS_SELF or clean in STATUS_OTHER or clean in DATE_WORDS
-            or clean in TOPPAIRS):
+            or clean in TOPPAIRS or clean in LIST_WORDS):
         return False
     msg, me, chat = update.effective_message, update.effective_user, update.effective_chat
     bot = context.bot
 
-    async def say(text, pic=None):
-        await send_with_pic(bot, chat.id, text, ["отн:" + pic] if pic else [],
-                            reply_to=msg.message_id)
+    async def say(text, pic=None, markup=None):
+        await send_with_pic(bot, chat.id, text, ["отн:" + pic] if pic else [], reply_to=msg.message_id,
+                            markup=markup)
 
     if clean in PROPOSE:
         other = target_user(update)
@@ -2024,50 +2364,22 @@ async def handle_relation(update, context, low):
         elif pair_of(other.id):
             await say(f"У {esc(disp(other))} уже есть пара.")
         else:
-            db.execute("INSERT OR REPLACE INTO proposals(to_id,from_id,created,msg_id) "
-                       "VALUES(?,?,?,?)", (other.id, me.id, time.time(), msg.message_id))
+            touch(other)
+            db.execute("INSERT OR REPLACE INTO proposals(to_id,from_id,created,msg_id) VALUES(?,?,?,?)",
+                       (other.id, me.id, time.time(), msg.message_id))
             db.commit()
-            await say(f"💌 {link(me.id, disp(me))} предлагает отношения "
-                      f"{link(other.id, disp(other))}!\nОтветь «принять» или «отказать» "
-                      f"(24 часа).", "предложение")
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("💖 Да", callback_data=f"rel:yes:{other.id}"),
+                                        InlineKeyboardButton("💔 Нет", callback_data=f"rel:no:{other.id}")]])
+            await say(random.choice(REL_TXT_PROPOSE).format(a=link(me.id, disp(me)),
+                                                            b=link(other.id, disp(other))),
+                      "предложение", kb)
         return True
 
     if clean in ACCEPT or clean in DECLINE:
-        pr = db.execute("SELECT * FROM proposals WHERE to_id=?", (me.id,)).fetchone()
-        if not pr:
-            return False
-        db.execute("DELETE FROM proposals WHERE to_id=?", (me.id,))
-        db.commit()
-        if time.time() - pr["created"] > 86400:
-            return False
-        a = pr["from_id"]
-        if clean in DECLINE:
-            await say(f"💔 {link(me.id, disp(me))} отказал(а) {link(a, uname(a))}.")
-        elif pair_of(a) or pair_of(me.id):
-            await say("Кто-то из вас уже в отношениях.")
-        else:
-            db.execute("INSERT INTO pairs(a,b,love,since,last_action) VALUES(?,?,?,?,?)",
-                       (a, me.id, REL_START, time.time(), time.time()))
-            db.commit()
-            await say(f"💞 {link(a, uname(a))} и {link(me.id, disp(me))} теперь пара!\n"
-                      f"{love_bar(REL_START)}\nУделяйте друг другу внимание: «поцеловать», "
-                      f"«обнять», «свидание». Без внимания любовь угасает.", "пара")
-            await send_certificate(bot, chat.id, pair_of(me.id), False)
-        return True
+        return await rel_answer(bot, chat.id, me.id, clean in ACCEPT, msg.message_id)
 
     if clean in LEAVE:
-        row = pair_of(me.id)
-        if not row:
-            return False
-        elif row["married_at"]:
-            await say("Вы в браке. Для этого есть команда «развод» (платная).")
-        else:
-            p = partner_of(row, me.id)
-            db.execute("DELETE FROM pairs WHERE id=?", (row["id"],))
-            db.commit()
-            await say(f"💔 {link(me.id, disp(me))} расстался(ась) с {link(p, uname(p))}.",
-                      "расставание")
-        return True
+        return await rel_leave_ask(update, context)
 
     if clean in STATUS_SELF or clean in STATUS_OTHER:
         u = target_user(update) if clean in STATUS_OTHER else None
@@ -2079,62 +2391,161 @@ async def handle_relation(update, context, low):
             await say("У тебя нет пары. Ответь на сообщение человека: «предложить отношения»."
                       if u.id == me.id else f"У {esc(disp(u))} нет пары.")
         else:
-            p = partner_of(row, u.id)
-            days = int((time.time() - row["since"]) // 86400) + 1
-            await say(f"💞 <b>Пара:</b> {link(u.id, disp(u))} и {link(p, uname(p))}\n"
-                      f"{love_bar(row['love'])}\n📅 Вместе: {days} дн.\n"
-                      f"🕰 Последнее внимание: {fmt_when(row['last_action'])}")
+            await say(pair_profile_text(row, u.id), None, pair_kb(u.id) if u.id == me.id else None)
         return True
 
     if clean in DATE_WORDS:
         row = pair_of(me.id)
         if not row:
             return False
+        p = partner_of(row, me.id)
+        if offended_block(me.id, p):
+            await say("🙁 Ваша половинка обижена на вас, все действия недоступны.")
         elif row["date_day"] == today():
             await say("Сегодня вы уже ходили на свидание 🌹")
         else:
-            p = partner_of(row, me.id)
-            love = min(100, row["love"] + REL_DATE_GAIN)
-            db.execute("UPDATE pairs SET love=?, date_day=?, last_action=? WHERE id=?",
-                       (love, today(), time.time(), row["id"]))
-            db.commit()
+            db.execute("UPDATE pairs SET date_day=?, last_action=?, actions=actions+1 WHERE id=?",
+                       (today(), time.time(), row["id"]))
+            new = spark_add(row["id"], REL_DATE_GAIN, "свидание", uname(me.id))
             await say(f"🌹 {link(me.id, disp(me))} и {link(p, uname(p))} сходили на свидание! "
-                      f"+{REL_DATE_GAIN} к любви\n{love_bar(love)}", "свидание")
+                      f"+{REL_DATE_GAIN} 🔥\nВсего искр: {new}", "свидание")
         return True
 
-    rows = db.execute("SELECT * FROM pairs ORDER BY love DESC, since LIMIT 10").fetchall()
-    if not rows:
-        await say("Пока нет ни одной пары 💔")
-    else:
-        await say("💞 <b>Топ пар</b>\n" + "\n".join(
-            f"{i}. {esc(uname(r['a']))} ❤ {esc(uname(r['b']))} — {r['love']}/100"
-            for i, r in enumerate(rows, 1)))
+    if clean in LIST_WORDS:
+        rows = db.execute("SELECT * FROM pairs ORDER BY since LIMIT 30").fetchall()
+        if not rows:
+            await say("Пока нет ни одной пары 💔")
+        else:
+            await say("💞 <b>Пары чата</b>\n" + "\n".join(
+                f"{i}. {'💍' if r['married_at'] else '❤️'} {esc(uname(r['a']))} + {esc(uname(r['b']))} "
+                f"({fmt_dur(time.time() - r['since'])})" for i, r in enumerate(rows, 1)))
+        return True
+
+    await say("📊 Выберите категорию для топа отношений:", None, top_kb(me.id))
     return True
 
 
-async def rel_daily(bot):
-    """Раз в день: у кого не было внимания больше суток, любовь падает."""
-    now_ts = time.time()
-    for row in db.execute("SELECT * FROM pairs").fetchall():
-        if now_ts - (row["last_action"] or row["since"]) < 86400:
-            continue
-        love = max(10 if row["married_at"] else 0, row["love"] - REL_DECAY)
-        a, b = row["a"], row["b"]
-        names = f"{link(a, uname(a))} и {link(b, uname(b))}"
+async def on_rel_btn(update, context):
+    q = update.callback_query
+    p = (q.data or "").split(":")
+    if len(p) < 3 or p[0] != "rel":
+        return await q.answer()
+    kind = p[1]
+    uid = int(p[-1]) if p[-1].isdigit() else 0
+    if q.from_user.id != uid:
+        return await q.answer("Это кнопка для другого человека 🙂", show_alert=True)
+    chat = q.message.chat.id
+    mid = q.message.message_id
+    bot = context.bot
+    shim = SimpleNamespace(effective_user=q.from_user, effective_chat=q.message.chat,
+                                 effective_message=q.message)
+
+    async def drop_markup():
         try:
-            if love <= 0:
-                db.execute("DELETE FROM pairs WHERE id=?", (row["id"],))
-                db.commit()
-                await send_with_pic(bot, CHAT_ID, f"💔 {names} расстались: без внимания любовь угасла.",
-                                    ["отн:расставание"])
-            else:
-                db.execute("UPDATE pairs SET love=? WHERE id=?", (love, row["id"]))
-                db.commit()
-                if love <= REL_WARN_BELOW:
-                    await send_with_pic(
-                        bot, CHAT_ID,
-                        f"🥀 {names}, вы давно не уделяли друг другу внимание.\n{love_bar(love)}\n"
-                        f"Напишите «поцеловать» или «свидание», пока не поздно!", ["отн:скучаю"])
+            await q.edit_message_reply_markup(None)
+        except Exception:
+            pass
+
+    if kind in ("yes", "no"):
+        touch(q.from_user)
+        ok = await rel_answer(bot, chat, uid, kind == "yes", mid)
+        await q.answer("Готово" if ok else "Предложение уже неактуально")
+        return await drop_markup()
+    if kind == "leave":
+        await q.answer()
+        await drop_markup()
+        return await rel_leave_do(bot, chat, uid, mid)
+    if kind == "cancel":
+        await q.answer("Отменено")
+        return await drop_markup()
+    if kind in ("kidyes", "kidno"):
+        await drop_markup()
+        if kind == "kidno":
+            state_del(f"kidreq:{uid}")
+            return await q.answer("Отказано")
+        err = await rel_kid_born(bot, chat, uid, mid)
+        return await q.answer(err or "Поздравляем!", show_alert=bool(err))
+    if kind == "top":
+        await q.answer()
+        try:
+            await q.edit_message_text(top_text(p[2]), parse_mode=HTML,
+                                      reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(
+                                          "< Назад", callback_data=f"rel:topback:{uid}")]]))
+        except Exception:
+            pass
+        return
+    if kind == "topback":
+        await q.answer()
+        try:
+            await q.edit_message_text("📊 Выберите категорию для топа отношений:", reply_markup=top_kb(uid))
+        except Exception:
+            pass
+        return
+    row = pair_of(uid)
+    if not row:
+        return await q.answer("У тебя нет пары", show_alert=True)
+    if kind == "menu":
+        what = p[2]
+        await q.answer()
+        if what == "buy":
+            B = InlineKeyboardButton
+            kb = InlineKeyboardMarkup([[B(f"{c} 🪙 → {c * SPARK_RATE} искр", callback_data=f"rel:buy2:{c}:{uid}")]
+                                       for c in (50, 200, 500)])
+            return await send_with_pic(bot, chat, f"💰 Купить искры. Курс: 1 🪙 = {SPARK_RATE} искр. "
+                                                  f"У тебя {coins_of(uid)} 🪙", [], reply_to=mid, markup=kb)
+        if what == "house":
+            return await life_houses(shim, context)
+        if what == "pets":
+            return await life_pet_shop(shim, context)
+        if what == "kids":
+            return await rel_kids_list(shim, context)
+        if what == "hist":
+            return await send_with_pic(bot, chat, hist_text(row["id"]), [], reply_to=mid)
+        return
+    if kind == "buy2":
+        c = int(p[2])
+        if c not in (50, 200, 500):
+            return await q.answer()
+        if coins_of(uid) < c:
+            return await q.answer(f"Не хватает монет: нужно {c}, у тебя {coins_of(uid)}", show_alert=True)
+        give_coins(uid, -c)
+        new = spark_add(row["id"], c * SPARK_RATE, "покупка искр", uname(uid))
+        await q.answer("Готово")
+        await drop_markup()
+        return await send_with_pic(bot, chat, f"💰 {link(uid, uname(uid))} купил(а) {c * SPARK_RATE} искр "
+                                              f"за {c} 🪙. Всего искр: {new}", [], reply_to=mid)
+    await q.answer()
+
+
+async def rel_daily(bot):
+    """Раз в сутки: списываем содержание пар, предупреждаем и расторгаем, когда искры кончились."""
+    for row in db.execute("SELECT * FROM pairs").fetchall():
+        try:
+            up = upkeep(row)
+            new = row["love"] - up
+            a, b = row["a"], row["b"]
+            names = f"{link(a, uname(a))} и {link(b, uname(b))}"
+            if new <= 0:
+                if row["married_at"]:
+                    new = 10
+                else:
+                    dur = fmt_dur(time.time() - row["since"])
+                    delete_pair(row["id"])
+                    await send_with_pic(bot, CHAT_ID,
+                                        f"💔 Отношения между {names}, длившиеся {dur}, были завершены: "
+                                        f"искры закончились.", ["отн:расставание"])
+                    continue
+            db.execute("UPDATE pairs SET love=? WHERE id=?", (new, row["id"]))
+            db.execute("INSERT INTO spark_log(pair_id,delta,reason,who,ts,bal) VALUES(?,?,?,?,?,?)",
+                       (row["id"], -up, "ежедневное содержание", "", time.time(), new))
+            db.commit()
+            nxt = upkeep(pair_by_id(row["id"]))
+            if new < nxt and not row["married_at"]:
+                await send_with_pic(
+                    bot, CHAT_ID,
+                    f"🚨 Отношения между {names} на грани распада! Осталось {new} искр, а для содержания "
+                    f"нужно {nxt}. Срочно пополните искры («моя пара», кнопка «Купить искры» или "
+                    f"«поцеловать», «свидание»), иначе отношения будут разрушены!", ["отн:скучаю"])
         except Exception:
             log.exception("rel_daily")
 
@@ -2601,7 +3012,8 @@ async def _avatar_bytes(bot, uid):
     return None
 
 
-async def send_certificate(bot, chat_id, row, married, reply_to=None):
+async def send_certificate(bot, chat_id, row, married, reply_to=None, caption=None):
+    """Свидетельство одним сообщением вместе с текстом (caption). True, если отправилось."""
     try:
         a, b = row["a"], row["b"]
         ts = row["married_at"] if married and row["married_at"] else row["since"]
@@ -2609,10 +3021,12 @@ async def send_certificate(bot, chat_id, row, married, reply_to=None):
         av_a, av_b = await _avatar_bytes(bot, a), await _avatar_bytes(bot, b)
         buf = await asyncio.to_thread(make_certificate, uname(a), uname(b), av_a, av_b, date_str, married)
         rp = ReplyParameters(message_id=reply_to, allow_sending_without_reply=True) if reply_to else None
-        await bot.send_photo(chat_id, buf, reply_parameters=rp,
-                             caption=f"📜 {link(a, uname(a))} и {link(b, uname(b))}", parse_mode=HTML)
+        await bot.send_photo(chat_id, buf, reply_parameters=rp, parse_mode=HTML,
+                             caption=caption or f"📜 {link(a, uname(a))} и {link(b, uname(b))}")
+        return True
     except Exception as e:
         print("Свидетельство не отправилось:", repr(e)[:200])
+        return False
 
 
 # ============================ ЖИЗНЬ: РАБОТЫ, БРАК, ДОМА, ПИТОМЦЫ ============================
@@ -2638,7 +3052,7 @@ PETS = {  # ключ: (название, цена, эмодзи)
     "кот": ("Кот", 150, "🐱"), "собака": ("Собака", 200, "🐶"), "хомяк": ("Хомяк", 80, "🐹"),
     "попугай": ("Попугай", 250, "🦜"), "кролик": ("Кролик", 180, "🐰"), "лиса": ("Лиса", 600, "🦊"),
 }
-MARRY_MIN_DAYS, MARRY_MIN_LOVE, MARRY_COST, DIVORCE_COST = 2, 60, 100, 50
+MARRY_MIN_DAYS, MARRY_MIN_LOVE, MARRY_COST, DIVORCE_COST = 2, 300, 100, 50   # MARRY_MIN_LOVE: искры
 PET_FEED_COST, PET_MAX, PET_RUNAWAY_DAYS = 3, 3, 5
 ANNIV_DAYS, ANNIV_COINS = 30, 50
 JOB_WORDS_FIND = {"найти работу", "вакансии", "поиск работы"}
@@ -2864,6 +3278,12 @@ async def finish_task(bot, chat_id, uid, reply_to=None):
     db.execute("UPDATE users SET job_shifts=? WHERE user_id=?", (shifts, uid))
     db.commit()
     give_coins(uid, pay)
+    spark_note = ""
+    pr_ = pair_of(uid)
+    if pr_:
+        bonus = max(1, pay // 5)
+        spark_add(pr_["id"], bonus, "работа", row["name"])
+        spark_note = f" · паре +{bonus} 🔥"
     extra = ""
     if t["kind"] == "deliver" and t["target_id"]:
         tr = urow(t["target_id"])
@@ -2871,7 +3291,7 @@ async def finish_task(bot, chat_id, uid, reply_to=None):
             extra = f"\n📬 {link(tr['user_id'], tr['name'])} обслужен(а)"
     await send_with_pic(bot, chat_id,
                         f"💼 {link(uid, row['name'])} выполнил(а) задание: <b>{JOBS[row['job']][0]}</b>{extra}\n"
-                        f"+{pay} 🪙 · баланс {coins_of(uid)} · смен всего {shifts}" + note,
+                        f"+{pay} 🪙 · баланс {coins_of(uid)} · смен всего {shifts}{spark_note}" + note,
                         ["раб:" + row["job"]], reply_to=reply_to, api_cat="thumbsup",
                         gif_query=JOB_GIF.get(row["job"]))
 
@@ -2944,7 +3364,7 @@ async def life_marry_propose(update, context):
         return await reply(update, f"Рановато. Вы вместе {days} дн., нужно хотя бы {MARRY_MIN_DAYS}. "
                                    f"Узнайте друг друга получше 🌹")
     if row["love"] < MARRY_MIN_LOVE:
-        return await reply(update, f"Любви пока маловато: {row['love']}/{MARRY_MIN_LOVE}. "
+        return await reply(update, f"Искр пока маловато: {row['love']}/{MARRY_MIN_LOVE}. "
                                    f"Больше внимания: «свидание», «поцеловать», «обнять»")
     if coins_of(me.id) < MARRY_COST:
         return await reply(update, f"Свадьба стоит {MARRY_COST} 🪙, у тебя {coins_of(me.id)}. "
@@ -2970,22 +3390,22 @@ async def life_marry_answer(update, context, accept):
     if time.time() - pr["created"] > 86400:
         return await reply(update, "Предложение устарело (прошли сутки).")
     if not accept:
-        return await reply(update, f"💔 {link(me.id, disp(me))} отказал(а) {link(a, uname(a))} в браке.")
+        return await reply(update, f"💔 {link(me.id, disp(me))} отказал{ea(me.id)} {link(a, uname(a))} в браке.")
     row = pair_of(me.id)
     if not row or partner_of(row, me.id) != a or is_married(row):
         return await reply(update, "Что-то изменилось, свадьба не получится.")
     if coins_of(a) < MARRY_COST:
         return await reply(update, f"У {esc(uname(a))} не хватило монет на свадьбу ({MARRY_COST} 🪙).")
     give_coins(a, -MARRY_COST)
-    db.execute("UPDATE pairs SET married_at=?, love=?, last_action=? WHERE id=?",
-               (time.time(), min(100, row["love"] + 20), time.time(), row["id"]))
+    db.execute("UPDATE pairs SET married_at=?, last_action=? WHERE id=?", (time.time(), time.time(), row["id"]))
     db.commit()
-    await life_send(update, context,
-                    f"🎉💍 <b>Свадьба!</b>\n{link(a, uname(a))} и {link(me.id, disp(me))} теперь муж и жена!\n"
-                    f"Дальше можно купить дом («дом»), завести питомцев («купить питомца») "
-                    f"и копить на семейное счастье. Профиль семьи: «семья»",
-                    key="отн:свадьба", api=MARRY_PIC_API)
-    await send_certificate(context.bot, update.effective_chat.id, pair_of(me.id), True)
+    spark_add(row["id"], 200, "свадьба", uname(a))
+    txt = (f"🎉💍 <b>Свадьба!</b>\n{link(a, uname(a))} и {link(me.id, disp(me))} теперь муж и жена!\n"
+           f"Дальше можно купить дом («купить дом»), завести питомцев («купить питомца») "
+           f"и копить на семейное счастье. Профиль семьи: «семья»")
+    if not await send_certificate(context.bot, update.effective_chat.id, pair_of(me.id), True,
+                                  update.effective_message.message_id, caption=txt):
+        await life_send(update, context, txt, key="отн:свадьба", api=MARRY_PIC_API)
 
 
 async def life_divorce(update, context):
@@ -3012,13 +3432,13 @@ async def life_family(update, context):
                                    else "У тебя нет пары. Ответь «предложить встречаться» 💌")
     a, b = row["a"], row["b"]
     lines = [f"👨‍👩‍👧 <b>Семья</b>: {link(a, uname(a))} ❤ {link(b, uname(b))}",
-             f"{love_bar(row['love'])}"]
+             spark_line(row)]
     if is_married(row):
         lines.append(f"💍 В браке с {fmt_when(row['married_at'])}, "
                      f"{int((time.time() - row['married_at']) // 86400) + 1} дн.")
     else:
         lines.append(f"💞 Встречаются {int((time.time() - row['since']) // 86400) + 1} дн. "
-                     f"(брак доступен с {MARRY_MIN_DAYS} дн. и любви {MARRY_MIN_LOVE})")
+                     f"(брак доступен с {MARRY_MIN_DAYS} дн. и {MARRY_MIN_LOVE} искр)")
     for i in (a, b):
         r = urow(i)
         if not r:
@@ -3229,9 +3649,27 @@ async def handle_life(update, context, low, text):
             return False
         await life_marry_answer(update, context, clean in MARRY_ACCEPT)
     elif clean in DIVORCE:
-        if not is_married(pair_of(update.effective_user.id)):
+        if not pair_of(update.effective_user.id):
             return False                  # обычное слово в разговоре
-        await life_divorce(update, context)
+        await rel_leave_ask(update, context)
+    elif clean in OFFEND_WORDS:
+        if not await rel_offend(update, context):
+            return False
+    elif clean in KID_WORDS:
+        await rel_kid_ask(update, context)
+    elif clean in KIDS_LIST_WORDS:
+        prow = pair_of(update.effective_user.id)
+        if not prow or not kids_of(prow["id"]):
+            return False
+        await rel_kids_list(update, context)
+    elif clean.startswith(("назвать ребёнка ", "назвать ребенка ")):
+        await rel_kid_rename(update, context, text.strip().split(" ", 2)[2] if len(text.split()) > 2 else "")
+    elif re.fullmatch(r"мой ?пол [мж]", clean):
+        g = clean[-1]
+        db.execute("UPDATE users SET gender=? WHERE user_id=?", (g, update.effective_user.id))
+        db.commit()
+        await reply(update, "✅ Пол сохранён: " + ("мужской" if g == "м" else "женский") +
+                    ". Теперь в текстах будут правильные окончания.")
     elif clean in FAMILY:
         if not pair_of(update.effective_user.id) and not target_user(update):
             return False
@@ -3500,6 +3938,7 @@ def main():
             message_reaction_types=MessageReactionHandler.MESSAGE_REACTION_COUNT_UPDATED))
     app.add_handler(CallbackQueryHandler(on_report_btn, pattern=r"^rp:"))
     app.add_handler(CallbackQueryHandler(on_life_btn, pattern=r"^life:"))
+    app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
