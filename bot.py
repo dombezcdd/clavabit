@@ -317,6 +317,12 @@ def now():
     return datetime.now(TZ)
 
 
+# ---- экономика (меняй числа здесь) ----
+MSG_COINS_EVERY = 30       # 1 монета за каждые N сообщений
+SHOP_PRICE_MULT = 3        # множитель цен в магазине подарков (цена из «добавить товар» умножается)
+JOB_PAY_MULT = 0.5         # множитель зарплаты на работах
+
+
 def today():
     return now().strftime(FMT)
 
@@ -565,7 +571,7 @@ def add_counted(uid, message_id, is_reply):
                (message_id, uid, d))
     db.commit()
     bump(uid, "cnt")
-    if (u["total"] + 1) % 10 == 0:
+    if (u["total"] + 1) % MSG_COINS_EVERY == 0:
         give_coins(uid, 1)
     if is_reply:
         bump(uid, "replies")
@@ -826,7 +832,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 25")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 26")
 
 
 def why_no_target(update, usage):
@@ -2681,14 +2687,14 @@ async def cmd_balance(update, context):
     touch(u)
     r = urow(u.id)
     await reply(update, f"{COIN} Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b>\n"
-                        f"Монеты дают за сообщения (1 за каждые 10) и за работу («найти работу»).\n"
+                        f"Монеты дают за сообщения (1 за каждые 30) и за работу («найти работу»).\n"
                         f"Потратить: «магазин»")
 
 
 @group_only
 async def cmd_bonus(update, context):
     await reply(update, "🎁 Ежедневного бонуса больше нет. Монеты начисляются за сообщения "
-                        "(1 монета за каждые 10) и за работу: «найти работу».")
+                        "(1 монета за каждые 30) и за работу: «найти работу».")
 
 
 @group_only
@@ -2723,6 +2729,10 @@ async def cmd_duels(update, context):
     await reply(update, "\n".join(lines))
 
 
+def shop_price(it):
+    return max(1, int(it["price"] * SHOP_PRICE_MULT))
+
+
 @group_only
 async def cmd_shop(update, context):
     items = db.execute("SELECT * FROM shop_items WHERE active=1 ORDER BY id").fetchall()
@@ -2732,7 +2742,7 @@ async def cmd_shop(update, context):
     lines = [f"🛍 <b>Магазин подарков</b>\nТвой баланс: <b>{coins_of(update.effective_user.id)}</b> {COIN}\n"]
     for it in items:
         stock = "" if it["stock"] < 0 else f" · осталось {it['stock']}"
-        lines.append(f"<b>{it['id']}.</b> {esc(it['name'])} — {it['price']} {COIN}{stock}")
+        lines.append(f"<b>{it['id']}.</b> {esc(it['name'])} — {shop_price(it)} {COIN}{stock}")
     lines.append("\nКупить: «купить 1» (номер товара). Приз выдаёт владелец вручную")
     await reply(update, "\n".join(lines))
 
@@ -2750,15 +2760,16 @@ async def cmd_buy(update, context):
     if it["stock"] == 0:
         return await reply(update, "Товар закончился 😔")
     bal = coins_of(me.id)
-    if bal < it["price"]:
-        return await reply(update, f"Не хватает монет: нужно {it['price']}, у тебя {bal} {COIN}")
-    db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (it["price"], me.id))
+    price = shop_price(it)
+    if bal < price:
+        return await reply(update, f"Не хватает монет: нужно {price}, у тебя {bal} {COIN}")
+    db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (price, me.id))
     if it["stock"] > 0:
         db.execute("UPDATE shop_items SET stock=stock-1 WHERE id=?", (it["id"],))
     cur = db.execute("INSERT INTO orders(user_id,name,item,price,created,status) VALUES(?,?,?,?,?, 'new')",
-                     (me.id, disp(me), it["name"], it["price"], time.time()))
+                     (me.id, disp(me), it["name"], price, time.time()))
     db.commit()
-    await reply(update, f"✅ {link(me.id, disp(me))} купил «{esc(it['name'])}» за {it['price']} {COIN}\n"
+    await reply(update, f"✅ {link(me.id, disp(me))} купил «{esc(it['name'])}» за {price} {COIN}\n"
                         f"Заказ <b>#{cur.lastrowid}</b>. {owner_mention()}, нужно выдать приз 🎁\n"
                         f"Остаток: {coins_of(me.id)} {COIN}")
 
@@ -3207,10 +3218,14 @@ def house_bonus_pct(uid):
     return best
 
 
+def shown_pay(base):
+    return max(1, int(base * JOB_PAY_MULT))
+
+
 def job_pay(row):
     name, base, cd, req = JOBS[row["job"]]
     mult = 1 + min(row["job_shifts"] or 0, 100) / 200 + house_bonus_pct(row["user_id"]) / 100
-    return int(base * mult)
+    return max(1, int(base * mult * JOB_PAY_MULT))
 
 
 def own_kb(rows):
@@ -3238,12 +3253,12 @@ async def life_jobs_find(update, context):
     offers = random.sample(avail, min(3, len(avail)))
     lines.append("<b>Тебе предлагают:</b>")
     for k, name, pay, cd, _ in offers:
-        lines.append(f"• {name}: {pay} 🪙 за смену, раз в {cd} ч.")
+        lines.append(f"• {name}: {shown_pay(pay)} 🪙 за смену, раз в {cd} ч.")
     if locked:
         lines.append("\n<b>Пока недоступно:</b>")
         for k, name, pay, cd, miss in locked[:4]:
-            lines.append(f"🔒 {name} ({pay} 🪙): нужно {', '.join(miss)}")
-    kb = own_kb([[InlineKeyboardButton(f"💼 {name} · {pay}🪙", callback_data=f"life:job:{me.id}:{k}")]
+            lines.append(f"🔒 {name} ({shown_pay(pay)} 🪙): нужно {', '.join(miss)}")
+    kb = own_kb([[InlineKeyboardButton(f"💼 {name} · {shown_pay(pay)}🪙", callback_data=f"life:job:{me.id}:{k}")]
                  for k, name, pay, cd, _ in offers])
     await life_send(update, context, "\n".join(lines), kb=kb)
 
@@ -3874,7 +3889,7 @@ async def life_job_my(update, context):
     sh = row["job_shifts"] or 0
     nx = career_next(sh)
     grow = f" (до «{nx[1]}» ещё {nx[0] - sh})" if nx else " (высшая должность)"
-    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} 🪙 (база {base}, "
+    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} 🪙 (база {shown_pay(base)}, "
             f"+стаж {min(sh, 100) // 2}%" + (f", +дом {bonus}%" if bonus else "") +
             f")\nСмен отработано: {sh}{grow}\n{nxt}")
     await life_send(update, context, text, key="проф:" + row["job"])
@@ -3884,7 +3899,7 @@ async def cmd_jobs_list_impl(update):
     lines = ["💼 <b>Список работ</b>"]
     for k, (name, pay, cd, req) in JOBS.items():
         r = ", ".join(f"{lbl} {req[f]}" for f, lbl in (("level", "ур."), ("days", "дн."), ("msgs", "сообщ.")) if f in req)
-        lines.append(f"• <b>{esc(name)}</b> ({esc(k)}): {pay} 🪙, пауза {cd} ч." + (f" · нужно: {r}" if r else "")
+        lines.append(f"• <b>{esc(name)}</b> ({esc(k)}): {shown_pay(pay)} 🪙, пауза {cd} ч." + (f" · нужно: {r}" if r else "")
                      + ("" if k in BUILTIN_JOBS else " · своя"))
     await reply(update, "\n".join(lines))
 
@@ -3992,8 +4007,8 @@ async def on_date_btn(update, context):
 
 
 # ---------- подарки партнёру ----------
-GIFTS = {"цветы": ("💐 Цветы", 30, 40), "шоколад": ("🍫 Шоколад", 20, 25),
-         "мишка": ("🧸 Плюшевый мишка", 80, 110), "украшение": ("💎 Украшение", 200, 320)}
+GIFTS = {"цветы": ("💐 Цветы", 90, 40), "шоколад": ("🍫 Шоколад", 60, 25),
+         "мишка": ("🧸 Плюшевый мишка", 250, 110), "украшение": ("💎 Украшение", 700, 320)}
 GIFT_MENU_WORDS = {"подарок партнёру", "подарок партнеру", "подарить партнёру", "подарить партнеру"}
 
 
@@ -4405,7 +4420,7 @@ async def private_menu(update):
 
 
 # ============================ СТАТЬЯ С КОМАНДАМИ В TELEGRAPH ============================
-DOC_VER = "25-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
+DOC_VER = "26-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
 DOC_TITLE = "Команды бота " + CHAT_TAG
 DOC_SECTIONS = [
     ("📊 Активность и профиль", [
@@ -4456,7 +4471,7 @@ DOC_SECTIONS = [
         ("Карьера", "Стажёр → Специалист (10 смен) → Старший (30) → Эксперт (70) → Мастер (150), с наградой за повышение"),
     ]),
     ("🪙 Монеты и игры", [
-        ("«баланс»", "кошелёк; монеты даются за сообщения (1 за 10) и за работу"),
+        ("«баланс»", "кошелёк; монеты даются за сообщения (1 за 30) и за работу"),
         ("«магазин», «купить 1»", "магазин подарков"),
         ("«топ монет», «дуэли»", "рейтинги"),
         ("/duel @юз, «дуэль»", "дуэль профилей: соперник принимает или отказывается кнопкой"),
