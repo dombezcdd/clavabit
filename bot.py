@@ -38,7 +38,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 
 TOKEN = ""                    # вставь токен от @BotFather ИЛИ положи его в файл token.txt рядом с bot.py
 CHAT_ID = -1004318004202          # основной чат
-TEST_CHAT_ID = 0                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
+TEST_CHAT_ID = -1002299660550                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
 OWNER_USERNAME = "bloya"        # владелец (без @)
 CHANNEL = "@clubClaveka"
 CHAT_TAG = "@clavekchat"
