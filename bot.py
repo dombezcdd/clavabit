@@ -96,6 +96,8 @@ HELP_TEXT = (
     "🪙 Монеты: «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»\n"
     "💼 Работа: «найти работу», «работать» (мини-игра на смене), «моя работа», «уволиться»\n"
     "📜 «свидетельство»: свидетельство пары или брака\n"
+    "🎁 «свидание» (выбор места), «подарок партнёру» или «подарить цветы», «правила» чата; в браке: "
+    "«семейный счёт», «в семью 100», «из семьи 100»\n"
     "💍 Брак: «предложить встречаться» → через пару дней «предложить брак» (ответом на сообщение), "
     "«принять брак», «семья», «развод»; в браке «завести ребёнка», «дети», «назвать ребёнка Имя»\n"
     "🏠 «дом» (купить жильё, бонус к зарплате), 🐾 «купить питомца», «питомцы», «покормить питомца», "
@@ -120,6 +122,8 @@ ADMIN_HELP = (
     "список картинок, очистить картинки обнять\n"
     "дк мут 2 — с какого ранга доступна команда («дк» без цифры покажет все), только 8 ранг\n"
     "добавить товар Мишка 500 [кол-во], удалить товар 1, выдать монеты @юз 100, заказы, выдан 5\n"
+    "добавить работу Грузчик 45 3 ур=2 (оплата, пауза в часах), удалить работу, список работ, журнал [N], "
+    "статистика недели, установить приветствие Привет, {name}!, установить правила Текст\n"
     "статистика, слова дня, итоги, запустить вопрос, запустить викторину\n\n"
     "Должности: 1 Мл. модератор, 2 Старший модератор, 3 Главный модератор, 4 Стажер админ, "
     "5 Младший админ, 6 Старший админ, 7 Зам.Администрации, 8 Доверенное лицо\n\n"
@@ -273,14 +277,6 @@ CREATE TABLE IF NOT EXISTS orders(
 CREATE TABLE IF NOT EXISTS reports(
   id INTEGER PRIMARY KEY AUTOINCREMENT, target_id INTEGER, target_name TEXT, msg_id INTEGER,
   reporter TEXT, reason TEXT, created REAL, status TEXT);
-CREATE TABLE IF NOT EXISTS rel_gifts(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, pair_id INTEGER, giver INTEGER, gift TEXT, price INTEGER, created REAL);
-CREATE TABLE IF NOT EXISTS family_wallet(pair_id INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS admin_log(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, actor INTEGER, action TEXT, target INTEGER DEFAULT 0,
-  details TEXT DEFAULT '', created REAL);
-CREATE TABLE IF NOT EXISTS chat_config(key TEXT PRIMARY KEY, value TEXT DEFAULT '');
-CREATE TABLE IF NOT EXISTS auto_replies(trigger TEXT PRIMARY KEY, response TEXT);
 """)
 for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEGER DEFAULT 0",
              "duel_l INTEGER DEFAULT 0", "bonus_day TEXT DEFAULT ''",
@@ -828,7 +824,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 20")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 21")
 
 
 def why_no_target(update, usage):
@@ -1338,6 +1334,8 @@ DEFAULT_RANKS = {
     "итоги": 4, "запустить вопрос": 4, "запустить викторину": 4,
     "добавить картинку": 2, "список картинок": 1, "очистить картинки": 3,
     "добавить товар": 4, "удалить товар": 4, "выдать монеты": 5, "заказы": 2, "выдан": 2,
+    "добавить работу": 5, "удалить работу": 5, "список работ": 2, "журнал": 3,
+    "установить приветствие": 3, "установить правила": 3, "статистика недели": 2,
 }
 ADMIN_TITLES = {
     1: "Мл. модератор", 2: "Старший модератор", 3: "Главный модератор",
@@ -1393,6 +1391,8 @@ def need(key):
         async def wrapper(update, context):
             if not has_rank(update.effective_user, key):
                 return
+            if key not in LOG_SKIP:
+                log_admin(update, key)
             return await fn(update, context)
         wrapper.__name__ = fn.__name__
         return group_only(wrapper)
@@ -1752,9 +1752,6 @@ async def _set_rank(update, context, rank, args):
     if not urow(uid):
         return await reply(update, "Этот участник ещё не писал в чат.")
     db.execute("UPDATE users SET arank=? WHERE user_id=?", (rank, uid))
-    db.execute("INSERT INTO admin_log(actor,action,target,details,created) VALUES(?,?,?,?,?)",
-               (update.effective_user.id, "выдача ранга" if rank else "снятие ранга", uid,
-                str(rank), time.time()))
     db.commit()
     if rank:
         await reply(update, f"⭐ {link(uid, name)} получает должность "
@@ -2458,11 +2455,7 @@ async def handle_relation(update, context, low):
         elif row["date_day"] == today():
             await say("Сегодня вы уже ходили на свидание 🌹")
         else:
-            db.execute("UPDATE pairs SET date_day=?, last_action=?, actions=actions+1 WHERE id=?",
-                       (today(), time.time(), row["id"]))
-            new = spark_add(row["id"], REL_DATE_GAIN, "свидание", uname(me.id))
-            await say(f"🌹 {link(me.id, disp(me))} и {link(p, uname(p))} сходили на свидание! "
-                      f"+{REL_DATE_GAIN} 🔥\nВсего искр: {new}", "свидание")
+            await say("🌹 Куда пойдёте на свидание? Платит тот, кто выбирает место.", None, date_kb(me.id))
         return True
 
     if clean in LIST_WORDS:
@@ -3296,7 +3289,8 @@ async def life_work(update, context):
             hint = f"\n\nНапиши ответ числом. Время: {TASK_MIN} мин."
         else:
             kind, answer = "word", random.choice(WORDS)
-            text = f"🧹 <b>Уборка.</b> Наведите порядок: напишите слово «{answer}»"
+            text = (f"🧹 <b>Уборка.</b> Наведите порядок: напишите слово «{answer}»" if job == "уборщик"
+                    else f"🛠 <b>Рабочее задание.</b> Напишите слово «{answer}»")
             hint = f"\n\nВремя: {TASK_MIN} мин."
     db.execute("INSERT OR REPLACE INTO job_tasks(user_id,job,kind,answer,target_id,created,expires) "
                "VALUES(?,?,?,?,?,?,?)", (me.id, job, kind, answer, target, time.time(),
@@ -3332,6 +3326,10 @@ async def finish_task(bot, chat_id, uid, reply_to=None):
     db.execute("UPDATE users SET job_shifts=? WHERE user_id=?", (shifts, uid))
     db.commit()
     give_coins(uid, pay)
+    for _i, (_n, _nm) in enumerate(CAREER):
+        if _i and _n == shifts:
+            give_coins(uid, 50 * _i)
+            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{50 * _i} 🪙"
     spark_note = ""
     pr_ = pair_of(uid)
     if pr_:
@@ -3382,20 +3380,6 @@ async def life_job_quit(update, context):
     db.execute("UPDATE users SET job='' WHERE user_id=?", (me.id,))
     db.commit()
     await reply(update, f"📤 Ты уволился с должности «{JOBS[row['job']][0]}». Новая работа: «найти работу»")
-
-
-async def life_job_my(update, context):
-    me = update.effective_user
-    row = urow(me.id)
-    if row["job"] not in JOBS:
-        return await reply(update, "У тебя нет работы. Напиши «найти работу» 💼")
-    name, base, cd, req = JOBS[row["job"]]
-    left = (row["last_work"] or 0) + cd * 3600 - time.time()
-    nxt = "можно выходить на смену прямо сейчас" if left <= 0 else f"следующая смена через {fmt_minutes(left // 60 + 1)}"
-    bonus = house_bonus_pct(me.id)
-    await reply(update, f"💼 <b>{name}</b>\nЗарплата за смену: {job_pay(row)} 🪙 (база {base}, "
-                        f"+стаж {min(row['job_shifts'] or 0, 100) // 2}%"
-                        + (f", +дом {bonus}%" if bonus else "") + f")\nСмен отработано: {row['job_shifts'] or 0}\n{nxt}")
 
 
 # ---------- брак ----------
@@ -3674,126 +3658,11 @@ async def on_life_btn(update, context):
 
 
 # ---------- маршрутизация слов ----------
-# ============================ ДОПОЛНИТЕЛЬНЫЕ СИСТЕМЫ ============================
-REL_GIFTS = {"цветы": ("💐 Букет цветов", 30, 8), "шоколад": ("🍫 Коробка шоколада", 20, 5),
-             "плюш": ("🧸 Плюшевый подарок", 60, 15)}
-DATE_PLACES = {"парк": "🌳 прогулка в парке", "кафе": "☕ уютное кафе", "кино": "🎬 кинотеатр"}
-
-def audit(actor, action, target=0, details=""):
-    db.execute("INSERT INTO admin_log(actor,action,target,details,created) VALUES(?,?,?,?,?)",
-               (actor, action, target, details[:300], time.time()))
-    db.commit()
-
-async def extra_features(update, context, low, text):
-    u = update.effective_user
-    m = update.effective_message
-    pair = pair_of(u.id)
-    if low in ("магазин подарков", "подарки партнёру", "подарки партнеру"):
-        if not pair:
-            return await reply(update, "Подарки доступны участникам отношений 💞")
-        lines = ["🎁 <b>Магазин подарков для партнёра</b>", "Напиши: «подарить цветы», «подарить шоколад» или «подарить плюш»."]
-        lines += [f"• {v[0]} — {v[1]} 🪙 (+{v[2]} 🔥)" for v in REL_GIFTS.values()]
-        return await reply(update, "\n".join(lines))
-    mm = re.fullmatch(r"подарить\s+(цветы|шоколад|плюш)", low)
-    if mm:
-        if not pair:
-            return await reply(update, "Сначала нужно быть в отношениях 💞")
-        key=mm.group(1); title, price, sparks=REL_GIFTS[key]
-        if coins_of(u.id) < price:
-            return await reply(update, f"Не хватает монет: {price} 🪙")
-        give_coins(u.id, -price)
-        partner=partner_of(pair,u.id)
-        new=spark_add(pair["id"], sparks, "подарок: "+key, uname(u.id))
-        db.execute("INSERT INTO rel_gifts(pair_id,giver,gift,price,created) VALUES(?,?,?,?,?)",
-                   (pair["id"],u.id,key,price,time.time())); db.commit()
-        return await reply(update, f"🎁 {link(u.id,disp(u))} подарил(а) {link(partner,uname(partner))}: {title}! +{sparks} 🔥\nИскр теперь: {new}")
-    if low in ("семейный счёт", "семейный счет", "семейный бюджет"):
-        if not pair or not is_married(pair):
-            return await reply(update, "Общий бюджет доступен только супругам 💍")
-        bal=db.execute("SELECT balance FROM family_wallet WHERE pair_id=?",(pair["id"],)).fetchone()
-        return await reply(update, f"🏦 Семейный бюджет: <b>{bal['balance'] if bal else 0} 🪙</b>\nВнести: «внести в бюджет 50». Взять: «взять из бюджета 50».")
-    mm=re.fullmatch(r"(внести в бюджет|взять из бюджета)\s+(\d+)",low)
-    if mm:
-        if not pair or not is_married(pair):
-            return await reply(update,"Семейный бюджет доступен только супругам 💍")
-        amount=int(mm.group(2)); deposit=mm.group(1)=="внести в бюджет"
-        if amount<1 or amount>1000000: return await reply(update,"Укажи сумму от 1 до 1 000 000.")
-        db.execute("INSERT OR IGNORE INTO family_wallet(pair_id,balance) VALUES(?,0)",(pair["id"],))
-        bal=db.execute("SELECT balance FROM family_wallet WHERE pair_id=?",(pair["id"],)).fetchone()[0]
-        if deposit:
-            if coins_of(u.id)<amount: return await reply(update,"На личном балансе недостаточно монет.")
-            give_coins(u.id,-amount); bal+=amount
-        else:
-            if bal<amount: return await reply(update,"В семейном бюджете недостаточно монет.")
-            bal-=amount; give_coins(u.id,amount)
-        db.execute("UPDATE family_wallet SET balance=? WHERE pair_id=?",(bal,pair["id"])); db.commit()
-        return await reply(update,f"🏦 {'Внесено' if deposit else 'Получено'} {amount} 🪙. Остаток семейного бюджета: {bal} 🪙.")
-    mm=re.fullmatch(r"свидание в (парке|кафе|кино)",low)
-    if mm:
-        if not pair: return False
-        place=DATE_PLACES[mm.group(1)]
-        if pair["date_day"]==today(): return await reply(update,"Сегодня вы уже ходили на свидание 🌹")
-        partner=partner_of(pair,u.id)
-        if offended_block(u.id,partner): return await reply(update,"🙁 Сначала помиритесь.")
-        db.execute("UPDATE pairs SET date_day=?,last_action=?,actions=actions+1 WHERE id=?",(today(),time.time(),pair["id"]))
-        gain=min(REL_DATE_GAIN, max(0, REL_DAILY_CAP-(pair["gain"] if pair["gain_day"]==today() else 0)))
-        db.execute("UPDATE pairs SET gain=?,gain_day=? WHERE id=?",((pair["gain"] if pair["gain_day"]==today() else 0)+gain,today(),pair["id"]))
-        total=spark_add(pair["id"],gain,"свидание: "+mm.group(1),uname(u.id))
-        return await reply(update,f"🌹 {link(u.id,disp(u))} и {link(partner,uname(partner))} сходили в {place}! +{gain} 🔥\nВсего: {total} 🔥")
-    # Admin settings, scoped to configured chat ranks
-    if low.startswith("правила чата "):
-        if not has_rank(u,"правила"): return False
-        value=text[len("правила чата "):].strip()[:3500]
-        db.execute("INSERT INTO chat_config(key,value) VALUES('rules',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(value,)); db.commit()
-        audit(u.id,"изменение правил",0,value)
-        return await reply(update,"✅ Правила чата обновлены.")
-    if low=="правила чата":
-        r=db.execute("SELECT value FROM chat_config WHERE key='rules'").fetchone()
-        return await reply(update,"📜 <b>Правила чата</b>\n"+(r[0] if r and r[0] else "Правила пока не установлены."))
-    if low.startswith("приветствие "):
-        if not has_rank(u,"правила"): return False
-        value=text[len("приветствие "):].strip()[:1000]
-        db.execute("INSERT INTO chat_config(key,value) VALUES('welcome',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(value,)); db.commit()
-        audit(u.id,"настройка приветствия",0,value)
-        return await reply(update,"✅ Приветствие сохранено. Оно будет отправляться новым участникам.")
-    if low.startswith("автоответ ") and " | " in text:
-        if not has_rank(u,"правила"): return False
-        body=text[len("автоответ "):]; trigger,response=[x.strip() for x in body.split("|",1)]
-        if not trigger or not response: return await reply(update,"Формат: автоответ слово | ответ")
-        db.execute("INSERT INTO auto_replies(trigger,response) VALUES(?,?) ON CONFLICT(trigger) DO UPDATE SET response=excluded.response",(trigger.lower()[:80],response[:1000])); db.commit()
-        audit(u.id,"добавление автоответа",0,trigger)
-        return await reply(update,"✅ Автоответ добавлен.")
-    if low=="журнал действий":
-        if not has_rank(u,"журнал"): return False
-        rows=db.execute("SELECT * FROM admin_log ORDER BY id DESC LIMIT 15").fetchall()
-        if not rows: return await reply(update,"Журнал пока пуст.")
-        lines=["📋 <b>Последние действия администраторов</b>"]
-        for r in rows:
-            when=datetime.fromtimestamp(r["created"],timezone.utc).strftime("%d.%m %H:%M")
-            lines.append(f"• {when} — {esc(uname(r['actor']))}: {esc(r['action'])}"+(f" → {esc(uname(r['target']))}" if r['target'] else "")+(f" ({esc(r['details'])})" if r['details'] else ""))
-        return await reply(update,"\n".join(lines))
-    if low=="статистика недели":
-        if not has_rank(u,"статистика"): return False
-        since=(datetime.now(timezone.utc)-timedelta(days=7)).strftime(FMT)
-        rows=db.execute("SELECT u.user_id,u.name,COALESCE(SUM(d.cnt),0) n FROM users u LEFT JOIN daily d ON d.user_id=u.user_id AND d.day>=? GROUP BY u.user_id ORDER BY n DESC LIMIT 10",(since,)).fetchall()
-        return await reply(update,"📊 <b>Активность за неделю</b>\n"+"\n".join(f"{i}. {esc(r['name'])} — {r['n']} сообщ." for i,r in enumerate(rows,1)))
-    # custom profession: admin syntax «добавить работу ключ | Название | оплата | смены_в_часах»
-    if low.startswith("добавить работу ") and "|" in text:
-        if not has_rank(u,"работы"): return False
-        parts=[x.strip() for x in text[len("добавить работу "):].split("|")]
-        if len(parts)!=4 or not re.fullmatch(r"[a-zа-яё0-9_]{2,24}",parts[0]) or not parts[2].isdigit() or not parts[3].isdigit():
-            return await reply(update,"Формат: добавить работу ключ | Название | оплата | интервал_часов")
-        key,name,pay,cd=parts[0],parts[1][:40],int(parts[2]),int(parts[3])
-        if key in JOBS or not (1<=pay<=10000 and 1<=cd<=168): return await reply(update,"Ключ уже занят или неверные значения (оплата 1–10000, интервал 1–168 ч).")
-        # Dynamic jobs are stored separately and exposed through the existing job system.
-        db.execute("INSERT INTO chat_config(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",("job:"+key,json.dumps([name,pay,cd],ensure_ascii=False))); db.commit()
-        audit(u.id,"добавление профессии",0,key)
-        return await reply(update,f"✅ Профессия «{esc(name)}» добавлена в настройки. Для полноценной смены с мини-заданием понадобится отдельный сценарий.")
-    return False
-
 async def handle_life(update, context, low, text):
     clean = re.sub(r"[!.?,]+$", "", low).strip()
     if await task_check(update, context, clean):
+        return True
+    if await handle_v21(update, context, clean):
         return True
     if clean in ("свидетельство", "сертификат", "свидетельство о браке"):
         who = target_user(update) or update.effective_user
@@ -3898,6 +3767,373 @@ async def life_daily(bot):
                 log.exception("pet run")
 
 
+# ============================ ВЕРСИЯ 21: карьера, свидания, подарки, семейный счёт, админка ============================
+db.executescript("""
+CREATE TABLE IF NOT EXISTS custom_jobs(key TEXT PRIMARY KEY, name TEXT, pay INTEGER, cd INTEGER, req TEXT);
+CREATE TABLE IF NOT EXISTS admin_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT);
+""")
+try:
+    db.execute("ALTER TABLE pairs ADD COLUMN bank INTEGER DEFAULT 0")
+except sqlite3.OperationalError:
+    pass
+db.commit()
+
+BUILTIN_JOBS = set(JOBS)
+
+
+def load_custom_jobs():
+    for r in db.execute("SELECT * FROM custom_jobs").fetchall():
+        try:
+            req = json.loads(r["req"] or "{}")
+        except Exception:
+            req = {}
+        JOBS[r["key"]] = (r["name"], r["pay"], r["cd"], req)
+
+
+load_custom_jobs()
+
+# ---------- карьера: должность растёт со сменами ----------
+CAREER = [(0, "Стажёр"), (10, "Специалист"), (30, "Старший"), (70, "Эксперт"), (150, "Мастер")]
+
+
+def career_title(shifts):
+    t = CAREER[0][1]
+    for n, name in CAREER:
+        if shifts >= n:
+            t = name
+    return t
+
+
+def career_next(shifts):
+    return next(((n, nm) for n, nm in CAREER if n > shifts), None)
+
+
+async def life_job_my(update, context):
+    me = update.effective_user
+    row = urow(me.id)
+    if row["job"] not in JOBS:
+        return await reply(update, "У тебя нет работы. Напиши «найти работу» 💼")
+    name, base, cd, req = JOBS[row["job"]]
+    left = (row["last_work"] or 0) + cd * 3600 - time.time()
+    nxt = "можно выходить на смену прямо сейчас" if left <= 0 else f"следующая смена через {fmt_minutes(left // 60 + 1)}"
+    bonus = house_bonus_pct(me.id)
+    sh = row["job_shifts"] or 0
+    nx = career_next(sh)
+    grow = f" (до «{nx[1]}» ещё {nx[0] - sh})" if nx else " (высшая должность)"
+    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} 🪙 (база {base}, "
+            f"+стаж {min(sh, 100) // 2}%" + (f", +дом {bonus}%" if bonus else "") +
+            f")\nСмен отработано: {sh}{grow}\n{nxt}")
+    await life_send(update, context, text, key="проф:" + row["job"])
+
+
+async def cmd_jobs_list_impl(update):
+    lines = ["💼 <b>Список работ</b>"]
+    for k, (name, pay, cd, req) in JOBS.items():
+        r = ", ".join(f"{lbl} {req[f]}" for f, lbl in (("level", "ур."), ("days", "дн."), ("msgs", "сообщ.")) if f in req)
+        lines.append(f"• <b>{esc(name)}</b> ({esc(k)}): {pay} 🪙, пауза {cd} ч." + (f" · нужно: {r}" if r else "")
+                     + ("" if k in BUILTIN_JOBS else " · своя"))
+    await reply(update, "\n".join(lines))
+
+
+@need("список работ")
+async def cmd_jobs_list(update, context):
+    await cmd_jobs_list_impl(update)
+
+
+@need("добавить работу")
+async def cmd_job_add(update, context):
+    a = list(context.args or [])
+    usage = ("Формат: добавить работу Грузчик 45 3 ур=2 дн=1 сообщ=100\n"
+             "(название одним словом, оплата за смену в 🪙, пауза в часах; условия ур=, дн=, сообщ= можно не писать)")
+    if len(a) < 3 or not a[1].isdigit() or not a[2].isdigit():
+        return await reply(update, usage)
+    key = a[0].lower()[:20]
+    if key in BUILTIN_JOBS:
+        return await reply(update, "Такая работа уже есть в боте, выбери другое название.")
+    pay, cd = int(a[1]), int(a[2])
+    if not (1 <= pay <= 5000) or not (1 <= cd <= 48):
+        return await reply(update, "Оплата от 1 до 5000 🪙, пауза от 1 до 48 часов.")
+    req = {}
+    for x in a[3:]:
+        m = re.fullmatch(r"(ур|дн|сообщ)=(\d{1,6})", x.lower())
+        if not m:
+            return await reply(update, usage)
+        req[{"ур": "level", "дн": "days", "сообщ": "msgs"}[m.group(1)]] = int(m.group(2))
+    name = key[:1].upper() + key[1:]
+    db.execute("INSERT OR REPLACE INTO custom_jobs(key,name,pay,cd,req) VALUES(?,?,?,?,?)",
+               (key, name, pay, cd, json.dumps(req)))
+    db.commit()
+    JOBS[key] = (name, pay, cd, req)
+    await reply(update, f"✅ Работа добавлена: <b>{esc(name)}</b>, {pay} 🪙 за смену, пауза {cd} ч. "
+                        f"Она появится в «найти работу».")
+
+
+@need("удалить работу")
+async def cmd_job_del(update, context):
+    a = list(context.args or [])
+    key = a[0].lower() if a else ""
+    if key in BUILTIN_JOBS:
+        return await reply(update, "Встроенные работы удалить нельзя, только добавленные командой.")
+    if key not in JOBS:
+        return await reply(update, "Такой работы нет. Список: «список работ»")
+    JOBS.pop(key, None)
+    db.execute("DELETE FROM custom_jobs WHERE key=?", (key,))
+    db.execute("UPDATE users SET job='' WHERE job=?", (key,))
+    db.commit()
+    await reply(update, f"🗑 Работа «{esc(key)}» удалена, у работавших она снята.")
+
+
+# ---------- свидания с выбором места ----------
+DATE_PLACES = {"парк": ("🌳 Парк", 0, 50), "кино": ("🎬 Кино", 20, 80),
+               "ресторан": ("🍽 Ресторан", 50, 130), "концерт": ("🎤 Концерт", 80, 200)}
+
+
+def date_kb(uid):
+    rows = []
+    for k, (nm, cost, gain) in DATE_PLACES.items():
+        rows.append([InlineKeyboardButton(f"{nm} · {cost} 🪙 → +{gain} 🔥" if cost else f"{nm} · бесплатно → +{gain} 🔥",
+                                          callback_data=f"date:{uid}:{k}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def date_go(uid, place):
+    """-> (ok, сообщение). Платит тот, кто выбрал место."""
+    row = pair_of(uid)
+    if not row:
+        return False, "У тебя нет пары"
+    if row["date_day"] == today():
+        return False, "Сегодня вы уже ходили на свидание 🌹"
+    pid = partner_of(row, uid)
+    if offended_block(uid, pid):
+        return False, "Ваша половинка обижена, действия недоступны"
+    nm, cost, gain = DATE_PLACES[place]
+    if cost and coins_of(uid) < cost:
+        return False, f"Нужно {cost} 🪙, у тебя {coins_of(uid)}"
+    if cost:
+        give_coins(uid, -cost)
+    db.execute("UPDATE pairs SET date_day=?, last_action=?, actions=actions+1 WHERE id=?",
+               (today(), time.time(), row["id"]))
+    db.commit()
+    new = spark_add(row["id"], gain, "свидание", uname(uid))
+    return True, (f"🌹 {link(uid, uname(uid))} и {link(pid, uname(pid))} сходили на свидание: <b>{nm}</b>!\n"
+                  f"+{gain} 🔥 · всего искр: {new}" + (f" · потрачено {cost} 🪙" if cost else ""))
+
+
+async def on_date_btn(update, context):
+    q = update.callback_query
+    p = (q.data or "").split(":")
+    if len(p) != 3 or not p[1].isdigit() or p[2] not in DATE_PLACES:
+        return await q.answer()
+    if q.from_user.id != int(p[1]):
+        return await q.answer("Это меню не для тебя", show_alert=True)
+    ok, msg = date_go(int(p[1]), p[2])
+    if not ok:
+        return await q.answer(msg, show_alert=True)
+    await q.answer()
+    try:
+        await q.message.delete()
+    except Exception:
+        pass
+    await send_with_pic(context.bot, q.message.chat_id, msg, ["свид:" + p[2]])
+
+
+# ---------- подарки партнёру ----------
+GIFTS = {"цветы": ("💐 Цветы", 30, 40), "шоколад": ("🍫 Шоколад", 20, 25),
+         "мишка": ("🧸 Плюшевый мишка", 80, 110), "украшение": ("💎 Украшение", 200, 320)}
+GIFT_MENU_WORDS = {"подарок партнёру", "подарок партнеру", "подарить партнёру", "подарить партнеру"}
+
+
+def gift_kb(uid):
+    return InlineKeyboardMarkup([[InlineKeyboardButton(f"{nm} · {cost} 🪙 → +{gain} 🔥",
+                                                       callback_data=f"gift:{uid}:{k}")]
+                                 for k, (nm, cost, gain) in GIFTS.items()])
+
+
+def gift_give(uid, key):
+    row = pair_of(uid)
+    if not row:
+        return False, "У тебя нет пары"
+    pid = partner_of(row, uid)
+    if offended_block(uid, pid):
+        return False, "Ваша половинка обижена, действия недоступны"
+    nm, cost, gain = GIFTS[key]
+    if coins_of(uid) < cost:
+        return False, f"Нужно {cost} 🪙, у тебя {coins_of(uid)}"
+    give_coins(uid, -cost)
+    new = spark_add(row["id"], gain, "подарок", uname(uid))
+    return True, (f"🎁 {link(uid, uname(uid))} подарил(а) {link(pid, uname(pid))}: {nm}!\n"
+                  f"+{gain} 🔥 · всего искр: {new}").replace("(а)", ea(uid))
+
+
+async def on_gift_btn(update, context):
+    q = update.callback_query
+    p = (q.data or "").split(":")
+    if len(p) != 3 or not p[1].isdigit() or p[2] not in GIFTS:
+        return await q.answer()
+    if q.from_user.id != int(p[1]):
+        return await q.answer("Это меню не для тебя", show_alert=True)
+    ok, msg = gift_give(int(p[1]), p[2])
+    if not ok:
+        return await q.answer(msg, show_alert=True)
+    await q.answer("Подарок отправлен 🎁")
+    await send_with_pic(context.bot, q.message.chat_id, msg, [])
+
+
+# ---------- семейный счёт ----------
+async def handle_v21(update, context, clean):
+    me = update.effective_user
+    msg = update.effective_message
+    m_in = re.match(r"^(?:в семью|положить в семью|пополнить семью)\s+(\d{1,7})$", clean)
+    m_out = re.match(r"^(?:из семьи|снять из семьи|снять с семьи)\s+(\d{1,7})$", clean)
+    gm = re.match(r"^подарить\s+(цветы|шоколад|мишка|мишку|украшение)$", clean)
+    if not (m_in or m_out or gm or clean in GIFT_MENU_WORDS
+            or clean in ("семейный счёт", "семейный счет", "семейный бюджет", "общий счёт", "общий счет")):
+        return False
+    row = pair_of(me.id)
+    if gm or clean in GIFT_MENU_WORDS:
+        if not row:
+            return False
+        if gm:
+            key = "мишка" if gm.group(1) == "мишку" else gm.group(1)
+            ok, text = gift_give(me.id, key)
+            await send_with_pic(context.bot, update.effective_chat.id, text if ok else "🙁 " + text, [],
+                                reply_to=msg.message_id)
+        else:
+            await send_with_pic(context.bot, update.effective_chat.id, "🎁 Что подарим половинке?", [],
+                                reply_to=msg.message_id, markup=gift_kb(me.id))
+        return True
+    if not row or not is_married(row):
+        return False
+    bank = row["bank"] or 0
+    if m_in:
+        n = int(m_in.group(1))
+        if n <= 0 or coins_of(me.id) < n:
+            return await reply(update, f"У тебя {coins_of(me.id)} 🪙, этого мало.") or True
+        give_coins(me.id, -n)
+        db.execute("UPDATE pairs SET bank=bank+? WHERE id=?", (n, row["id"]))
+        db.commit()
+        await reply(update, f"🏦 {n} 🪙 положено на семейный счёт. Теперь там {bank + n} 🪙")
+    elif m_out:
+        n = int(m_out.group(1))
+        if n <= 0 or bank < n:
+            return await reply(update, f"На семейном счёте {bank} 🪙, этого мало.") or True
+        db.execute("UPDATE pairs SET bank=bank-? WHERE id=?", (n, row["id"]))
+        db.commit()
+        give_coins(me.id, n)
+        await reply(update, f"🏦 Снято {n} 🪙. На семейном счёте осталось {bank - n} 🪙")
+    else:
+        await reply(update, f"🏦 <b>Семейный счёт</b>: {bank} 🪙\n«в семью 100» положить, «из семьи 100» снять")
+    return True
+
+
+# ---------- админка: журнал, приветствие, правила, статистика недели ----------
+LOG_SKIP = {"список мута", "список картинок", "админка", "админы", "заказы", "журнал", "статистика",
+            "слова дня", "статистика недели", "список работ", "дк"}
+
+
+def log_admin(update, key):
+    try:
+        u, m = update.effective_user, update.effective_message
+        txt = (m.text or "")[:200]
+        t = reply_user(update)
+        if t:
+            txt += f"  [→ {disp(t)}]"
+        db.execute("INSERT INTO admin_log(ts,actor,actor_name,cmd,text) VALUES(?,?,?,?,?)",
+                   (time.time(), u.id, disp(u), key, txt))
+        db.execute("DELETE FROM admin_log WHERE id < (SELECT MAX(id) FROM admin_log) - 500")
+        db.commit()
+    except Exception:
+        log.exception("admin log")
+
+
+@need("журнал")
+async def cmd_admin_log(update, context):
+    a = list(context.args or [])
+    n = max(1, min(int(a[0]), 40)) if a and a[0].isdigit() else 15
+    rows = db.execute("SELECT * FROM admin_log ORDER BY id DESC LIMIT ?", (n,)).fetchall()
+    if not rows:
+        return await reply(update, "Журнал пока пуст.")
+    lines = [f"📒 <b>Журнал действий</b> (последние {len(rows)})"]
+    for r in rows:
+        t = datetime.fromtimestamp(r["ts"], now().tzinfo).strftime("%d.%m %H:%M")
+        lines.append(f"{t} · {esc(r['actor_name'])}: {esc(r['text'])}")
+    await reply(update, "\n".join(lines)[:4000])
+
+
+@need("установить приветствие")
+async def cmd_set_welcome(update, context):
+    t = " ".join(context.args or []).strip()
+    if not t:
+        cur = state_get("welcome")
+        return await reply(update, ("Сейчас: " + esc(cur) if cur else "Приветствие выключено.") +
+                                   "\nФормат: установить приветствие Привет, {name}! Правила: «правила». "
+                                   "Выключить: установить приветствие выкл")
+    if t.lower() in ("выкл", "off", "нет"):
+        state_set("welcome", "")
+        return await reply(update, "Приветствие выключено.")
+    state_set("welcome", t[:500])
+    await reply(update, "✅ Приветствие сохранено. {name} заменится на имя новичка.")
+
+
+@need("установить правила")
+async def cmd_set_rules(update, context):
+    t = " ".join(context.args or []).strip()
+    if not t:
+        return await reply(update, "Формат: установить правила Текст правил (выкл — убрать)")
+    state_set("rules", "" if t.lower() in ("выкл", "off") else t[:1500])
+    await reply(update, "✅ Правила сохранены. Участники смотрят их словом «правила».")
+
+
+@group_only
+async def cmd_rules(update, context):
+    t = state_get("rules")
+    if t:
+        await reply(update, "📜 <b>Правила чата</b>\n" + esc(t))
+
+
+async def on_new_members(update, context):
+    msg, chat = update.effective_message, update.effective_chat
+    if not msg or not chat or chat.id not in ALLOWED:
+        return
+    tpl = state_get("welcome")
+    if not tpl:
+        return
+    for u in msg.new_chat_members or []:
+        if u.is_bot:
+            continue
+        touch(u)
+        try:
+            await context.bot.send_message(chat.id, esc(tpl).replace("{name}", link(u.id, disp(u))),
+                                           parse_mode=HTML)
+        except Exception:
+            log.exception("welcome")
+
+
+@need("статистика недели")
+async def cmd_weekstat(update, context):
+    ws = week_start()
+    days = db.execute("SELECT day, SUM(cnt) c FROM daily WHERE day>=? GROUP BY day ORDER BY day", (ws,)).fetchall()
+    total = sum(r["c"] or 0 for r in days)
+    active = db.execute("SELECT COUNT(DISTINCT user_id) FROM daily WHERE day>=? AND cnt>0", (ws,)).fetchone()[0]
+    top = db.execute("SELECT u.user_id, u.name, SUM(d.cnt) c FROM daily d JOIN users u ON u.user_id=d.user_id "
+                     "WHERE d.day>=? GROUP BY d.user_id ORDER BY c DESC LIMIT 5", (ws,)).fetchall()
+    new = db.execute("SELECT COUNT(*) FROM users WHERE first_seen>=?", (time.time() - 7 * 86400,)).fetchone()[0]
+    pairs_n = db.execute("SELECT COUNT(*) FROM pairs").fetchone()[0]
+    married = db.execute("SELECT COUNT(*) FROM pairs WHERE married_at>0").fetchone()[0]
+    mx = max([r["c"] or 0 for r in days] + [1])
+    lines = [f"📊 <b>Неделя в чате</b>\nСообщений: {total} · активных: {active} · новых: {new}",
+             f"Пар: {pairs_n} (в браке {married})", "\n<b>По дням</b>"]
+    for r in days:
+        c = r["c"] or 0
+        lines.append(f"{r['day'][5:]} {'█' * max(1, round(c * 10 / mx)) if c else '·'} {c}")
+    if top:
+        lines.append("\n<b>Топ-5</b>")
+        for i, r in enumerate(top, 1):
+            lines.append(f"{i}. {link(r['user_id'], r['name'])}: {r['c']}")
+    await reply(update, "\n".join(lines))
+
+
 # Команды обычными словами (сообщение целиком, без слеша)
 USER_ALIASES = {
     "помощь": cmd_help, "команды": cmd_help, "хелп": cmd_help,
@@ -3910,7 +4146,7 @@ USER_ALIASES = {
     "монетка": cmd_coin, "монета": cmd_coin,
     "баланс": cmd_balance, "кошелек": cmd_balance, "кошелёк": cmd_balance,
     "магазин": cmd_shop, "шоп": cmd_shop, "топ монет": cmd_topcoins,
-    "дуэли": cmd_duels, "бонус": cmd_bonus, "репорт": cmd_report, "жалоба": cmd_report,
+    "дуэли": cmd_duels, "бонус": cmd_bonus, "правила": cmd_rules, "репорт": cmd_report, "жалоба": cmd_report,
 }
 # слово -> (команда, ключ доступа, сколько слов можно дописать)
 ADMIN_ALIASES = {
@@ -3933,6 +4169,11 @@ ADMIN_ALIASES = {
     "удалить товар": (cmd_item_del, "удалить товар", 1),
     "выдать монеты": (cmd_coins_give, "выдать монеты", 4),
     "заказы": (cmd_orders, "заказы", 0), "выдан": (cmd_order_done, "выдан", 1),
+    "добавить работу": (cmd_job_add, "добавить работу", 8), "удалить работу": (cmd_job_del, "удалить работу", 1),
+    "список работ": (cmd_jobs_list, "список работ", 0), "журнал": (cmd_admin_log, "журнал", 1),
+    "установить приветствие": (cmd_set_welcome, "установить приветствие", 80),
+    "установить правила": (cmd_set_rules, "установить правила", 200),
+    "статистика недели": (cmd_weekstat, "статистика недели", 0),
 }
 
 
@@ -4005,14 +4246,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await handle_rp(update, context, cmd_low[1:].strip(), dot=True)
     if cmd_low in RP:
         return await handle_rp(update, context, cmd_low)
-
-    if await extra_features(update, context, cmd_low, text):
-        return
-
-    # configured keyword auto-replies
-    ar=db.execute("SELECT response FROM auto_replies WHERE trigger=?",(cmd_low,)).fetchone()
-    if ar:
-        return await reply(update, ar[0])
 
     if await handle_life(update, context, cmd_low, text):
         return
@@ -4112,6 +4345,7 @@ def main():
         ("orders", cmd_orders), ("done", cmd_order_done),
     ):
         app.add_handler(CommandHandler(name, fn))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.UpdateType.MESSAGE, on_text))
     if MessageReactionHandler is not None:
@@ -4121,6 +4355,8 @@ def main():
     app.add_handler(CallbackQueryHandler(on_report_btn, pattern=r"^rp:"))
     app.add_handler(CallbackQueryHandler(on_life_btn, pattern=r"^life:"))
     app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
+    app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
+    app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
