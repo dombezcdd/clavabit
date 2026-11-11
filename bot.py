@@ -82,9 +82,9 @@ HELP_TEXT = (
     "/top, /week, /month — топы активности\n"
     "/quests — ежедневные квесты\n"
     "+реп — ответом на сообщение или «+реп @юз»\n"
-    "/duel — дуэль профилей (ответом на сообщение или /duel @юз)\n"
+    "/duel — вызов на дуэль профилей (ответом или /duel @юз, соперник принимает кнопкой)\n"
     "!ссылка на NFT (t.me/nft/...) — карточка и анимация NFT; также «гиф ссылка»\n"
-    "/dice — кости против другого (ответом), /slots, /coin\n"
+    "/dice — кости против другого (ответом или @юз, нужно согласие), /slots, /coin\n"
     "/quiztop — рейтинг викторины\n"
     "РП (ответом на сообщение или «обнять @юз», с гифкой; без искр): обнять, обнять крепко, поцеловать, погладить, "
     "дать пять, пожать руку, взять за руку, пощекотать, ткнуть, покормить, помахать, "
@@ -93,7 +93,7 @@ HELP_TEXT = (
     "или «принять» (2 минуты). Общий баланс пары это искры 🔥: пополняют точечные команды для партнёра «.поцеловать», «.обнять», «.взять за руку» и т.д., «свидание», "
     "работа и покупка в профиле «моя пара», тратятся раз в сутки, на нуле пара распадается. "
     "Ещё: «список пар», «топ пар», «обида» (повтор снимает), «расстаться», «мойпол м» или «мойпол ж»\n\n"
-    "🪙 Монеты: «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»\n"
+    "🪙 Монеты: «баланс», «магазин», «купить 1», «топ монет», «дуэли»\n"
     "💼 Работа: «найти работу», «работать» (мини-игра на смене), «моя работа», «уволиться»\n"
     "📜 «свидетельство»: свидетельство пары или брака\n"
     "🎮 «мини игры» (кнопки): угадай число, анаграмма, кто быстрее, виселица; «топ игр»\n"
@@ -535,13 +535,11 @@ async def check_quests(bot, uid):
             out.append(f"✅ {link(uid, u['name'])} выполнил квест: "
                        f"{QUEST_TITLES[qid].format(n=target)} (+{QUEST_XP} опыта)")
             out += give_xp(uid, QUEST_XP)
-            give_coins(uid, 10)
     if len(done) >= 3 and "ALL" not in done:
         db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, "ALL"))
         db.commit()
         out.append(f"🏅 {link(uid, u['name'])} выполнил ВСЕ квесты дня! (+{QUEST_ALL_BONUS_XP} опыта)")
         out += give_xp(uid, QUEST_ALL_BONUS_XP)
-        give_coins(uid, 30)
     if out:
         try:
             await bot.send_message(CHAT_ID, "\n".join(out), parse_mode=HTML,
@@ -702,7 +700,6 @@ async def try_quiz(update, text):
             db.execute("UPDATE users SET quiz_pts=quiz_pts+1 WHERE user_id=?", (uid,))
             db.commit()
             ev = give_xp(uid, QUIZ_XP)
-            give_coins(uid, 10)
             pts = urow(uid)["quiz_pts"]
             await update.effective_message.reply_text(
                 f"✅ Верно! {link(uid, urow(uid)['name'])} отвечает первым. "
@@ -829,7 +826,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 24")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 25")
 
 
 def why_no_target(update, usage):
@@ -1004,7 +1001,7 @@ async def cmd_slots(update, context):
     else:
         pts, text = 0, "Не повезло, попробуй ещё 🍀"
     if pts:
-        db.execute("UPDATE users SET game_pts=game_pts+?, coins=coins+? WHERE user_id=?", (pts, pts * 2, uid))
+        db.execute("UPDATE users SET game_pts=game_pts+? WHERE user_id=?", (pts, uid))
         db.commit()
     await reply(update, text)
     await played(context.bot, uid)
@@ -1012,28 +1009,7 @@ async def cmd_slots(update, context):
 
 @group_only
 async def cmd_dice(update, context):
-    me = update.effective_user
-    other = target_user(update)
-    if not other or other.id == me.id:
-        return await reply(update, why_no_target(update, "Ответь командой /dice на сообщение соперника 🎲"))
-    if not cooldown(("dice", me.id), 20):
-        return await reply(update, "Подожди немного ⏳")
-    chat = update.effective_chat.id
-    a = await context.bot.send_dice(chat, emoji="🎲")
-    b = await context.bot.send_dice(chat, emoji="🎲")
-    await asyncio.sleep(4)
-    va, vb = a.dice.value, b.dice.value
-    ra, rb = urow(me.id), urow(other.id)
-    if va == vb:
-        res = "🤝 Ничья!"
-    else:
-        win = ra if va > vb else rb
-        db.execute("UPDATE users SET game_pts=game_pts+1, coins=coins+2 WHERE user_id=?", (win["user_id"],))
-        db.commit()
-        res = f"🏆 Победил {link(win['user_id'], win['name'])}! (+1 игровое очко)"
-    await reply(update, f"🎲 {esc(ra['name'])}: {va} — {esc(rb['name'])}: {vb}\n{res}")
-    await played(context.bot, me.id)
-    await played(context.bot, other.id)
+    await send_challenge(update, context, "dice")
 
 
 async def profile_score(bot, row):
@@ -1296,17 +1272,33 @@ async def handle_nft(update, context, text):
             url=f"https://t.me/nft/{found[0][0]}-{found[0][1]}", prefer_large_media=True, show_above_text=True))
 
 
-@group_only
-async def cmd_duel(update, context):
-    me = update.effective_user
-    other = target_user(update)
-    if not other or other.id == me.id:
-        return await reply(update, "Ответь командой /duel на сообщение соперника — "
-                                   "сравним профили ⚔️")
-    if not cooldown(("duel", me.id), 30):
-        return await reply(update, "Подожди немного ⏳")
-    ra, rb = urow(me.id), urow(other.id)
-    pa, pb = await profile_score(context.bot, ra), await profile_score(context.bot, rb)
+async def _send(bot, chat_id, text, reply_to=None, markup=None):
+    return await bot.send_message(chat_id, text, parse_mode=HTML, link_preview_options=NOPREV,
+                                  reply_to_message_id=reply_to, reply_markup=markup,
+                                  allow_sending_without_reply=True)
+
+
+async def run_dice(bot, chat, a_id, b_id, reply_to=None):
+    a = await bot.send_dice(chat, emoji="🎲")
+    b = await bot.send_dice(chat, emoji="🎲")
+    await asyncio.sleep(4)
+    va, vb = a.dice.value, b.dice.value
+    ra, rb = urow(a_id), urow(b_id)
+    if va == vb:
+        res = "🤝 Ничья!"
+    else:
+        win = ra if va > vb else rb
+        db.execute("UPDATE users SET game_pts=game_pts+1 WHERE user_id=?", (win["user_id"],))
+        db.commit()
+        res = f"🏆 Победил {link(win['user_id'], win['name'])}! (+1 игровое очко)"
+    await _send(bot, chat, f"🎲 {esc(ra['name'])}: {va} — {esc(rb['name'])}: {vb}\n{res}", reply_to)
+    await played(bot, a_id)
+    await played(bot, b_id)
+
+
+async def run_duel(bot, chat, a_id, b_id, reply_to=None):
+    ra, rb = urow(a_id), urow(b_id)
+    pa, pb = await profile_score(bot, ra), await profile_score(bot, rb)
     sa, sb = sum(pa.values()) + random.randint(0, 15), sum(pb.values()) + random.randint(0, 15)
 
     def fmt(p):
@@ -1314,20 +1306,85 @@ async def cmd_duel(update, context):
 
     win = ra if sa >= sb else rb
     lose = rb if win is ra else ra
-    db.execute("UPDATE users SET game_pts=game_pts+2, duel_w=duel_w+1, coins=coins+5 WHERE user_id=?",
-               (win["user_id"],))
+    db.execute("UPDATE users SET game_pts=game_pts+2, duel_w=duel_w+1 WHERE user_id=?", (win["user_id"],))
     db.execute("UPDATE users SET duel_l=duel_l+1 WHERE user_id=?", (lose["user_id"],))
     db.commit()
-    await reply(update,
+    await _send(bot, chat,
                 f"⚔️ <b>Дуэль профилей</b>\n"
                 f"{esc(ra['name'])}: <b>{sa}</b> ({fmt(pa)})\n"
                 f"{esc(rb['name'])}: <b>{sb}</b> ({fmt(pb)})\n\n"
-                f"🏆 Побеждает {link(win['user_id'], win['name'])} (+2 игровых очка, +5 🪙)\n"
+                f"🏆 Побеждает {link(win['user_id'], win['name'])} (+2 игровых очка)\n"
                 f"<i>В счёт идут: аватарка, описание, юзернейм, уровень, репутация, олдство, тег, "
                 f"NFT-подарки и обычные подарки из профиля + немного удачи. "
-                f"Скрытые подарки бот не видит. NFT-юзернейм отличить нельзя.</i>")
-    await played(context.bot, me.id)
-    await played(context.bot, other.id)
+                f"Скрытые подарки бот не видит. NFT-юзернейм отличить нельзя.</i>", reply_to)
+    await played(bot, a_id)
+    await played(bot, b_id)
+
+
+CHALLENGE_SEC = 120
+CHALLENGE_DONE = set()
+
+
+def challenge_kb(kind, a, b):
+    ts = int(time.time())
+    return InlineKeyboardMarkup([[InlineKeyboardButton("✅ Принять", callback_data=f"ch:{kind}:{a}:{b}:y:{ts}"),
+                                  InlineKeyboardButton("❌ Отказаться", callback_data=f"ch:{kind}:{a}:{b}:n:{ts}")]])
+
+
+async def send_challenge(update, context, kind):
+    me = update.effective_user
+    other = target_user(update)
+    cmd = "/duel" if kind == "duel" else "/dice"
+    if not other or other.id == me.id:
+        return await reply(update, why_no_target(update, f"Ответь командой {cmd} на сообщение соперника или напиши {cmd} @юз"))
+    if not cooldown((kind, me.id), 30):
+        return await reply(update, "Подожди немного ⏳")
+    touch(me)
+    title = "⚔️ дуэль профилей" if kind == "duel" else "🎲 кости"
+    await _send(context.bot, update.effective_chat.id,
+                f"{link(other.id, disp(other))}, {link(me.id, disp(me))} вызывает тебя: {title}!\n"
+                f"Принять вызов? Время на ответ: {CHALLENGE_SEC // 60} мин.",
+                update.effective_message.message_id, challenge_kb(kind, me.id, other.id))
+
+
+async def on_challenge_btn(update, context):
+    q = update.callback_query
+    p = (q.data or "").split(":")
+    if len(p) != 6 or p[1] not in ("duel", "dice") or not p[2].isdigit() or not p[3].isdigit() or p[4] not in ("y", "n"):
+        return await q.answer()
+    kind, a, b, ans, ts = p[1], int(p[2]), int(p[3]), p[4], int(p[5]) if p[5].isdigit() else 0
+    if q.from_user.id != b:
+        return await q.answer("Этот вызов адресован не тебе", show_alert=True)
+    key = (q.message.chat_id, q.message.message_id)
+    if key in CHALLENGE_DONE:
+        return await q.answer()
+    CHALLENGE_DONE.add(key)
+    if len(CHALLENGE_DONE) > 500:
+        CHALLENGE_DONE.clear()
+    try:
+        await q.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    if time.time() - ts > CHALLENGE_SEC:
+        await q.answer("Вызов устарел", show_alert=True)
+        return
+    ra, rb = urow(a), urow(b)
+    if not ra or not rb:
+        return await q.answer()
+    if ans == "n":
+        await q.answer()
+        return await _send(context.bot, q.message.chat_id,
+                           f"🙅 {link(b, rb['name'])} отказался от вызова {link(a, ra['name'])}.")
+    await q.answer()
+    if kind == "duel":
+        await run_duel(context.bot, q.message.chat_id, a, b)
+    else:
+        await run_dice(context.bot, q.message.chat_id, a, b)
+
+
+@group_only
+async def cmd_duel(update, context):
+    await send_challenge(update, context, "duel")
 
 
 # ---------- ранги админов и права на команды ----------
@@ -2624,23 +2681,14 @@ async def cmd_balance(update, context):
     touch(u)
     r = urow(u.id)
     await reply(update, f"{COIN} Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b>\n"
-                        f"Монеты дают за сообщения (1 за каждые 10), квесты, викторину, дуэли, игры и «бонус».\n"
+                        f"Монеты дают за сообщения (1 за каждые 10) и за работу («найти работу»).\n"
                         f"Потратить: «магазин»")
 
 
 @group_only
 async def cmd_bonus(update, context):
-    uid = update.effective_user.id
-    r = urow(uid)
-    d = today()
-    if r["bonus_day"] == d:
-        return await reply(update, "Сегодняшний бонус уже получен. Приходи завтра 🎁")
-    amount = BONUS_BASE + min(r["streak"] or 0, 30)
-    db.execute("UPDATE users SET bonus_day=? WHERE user_id=?", (d, uid))
-    db.commit()
-    give_coins(uid, amount)
-    await reply(update, f"🎁 Ежедневный бонус: <b>+{amount}</b> {COIN} "
-                        f"(база {BONUS_BASE} + серия дней). Баланс: {coins_of(uid)}")
+    await reply(update, "🎁 Ежедневного бонуса больше нет. Монеты начисляются за сообщения "
+                        "(1 монета за каждые 10) и за работу: «найти работу».")
 
 
 @group_only
@@ -2648,7 +2696,7 @@ async def cmd_topcoins(update, context):
     rows = db.execute("SELECT user_id,name,coins FROM users WHERE coins>0 "
                       "ORDER BY coins DESC LIMIT 10").fetchall()
     if not rows:
-        return await reply(update, "Пока ни у кого нет монет. Пиши в чат и забирай «бонус» 🪙")
+        return await reply(update, "Пока ни у кого нет монет. Пиши в чат и работай: «найти работу» 🪙")
     medals = ["🥇", "🥈", "🥉"]
     lines = [f"{COIN} <b>Топ по монетам</b>"]
     for i, r in enumerate(rows):
@@ -3107,7 +3155,7 @@ PETS = {  # ключ: (название, цена, эмодзи)
 }
 MARRY_MIN_DAYS, MARRY_MIN_LOVE, MARRY_COST, DIVORCE_COST = 2, 300, 100, 50   # MARRY_MIN_LOVE: искры
 PET_FEED_COST, PET_MAX, PET_RUNAWAY_DAYS = 3, 3, 5
-ANNIV_DAYS, ANNIV_COINS = 30, 50
+ANNIV_DAYS, ANNIV_SPARKS = 30, 100
 JOB_WORDS_FIND = {"найти работу", "вакансии", "поиск работы"}
 JOB_WORDS_WORK = {"работать", "выйти на смену", "пойти на работу"}
 JOB_WORDS_QUIT = {"уволиться", "уволиться с работы"}
@@ -3412,7 +3460,7 @@ async def life_marry_propose(update, context):
                                    f"Больше внимания: «свидание», «поцеловать», «обнять»")
     if coins_of(me.id) < MARRY_COST:
         return await reply(update, f"Свадьба стоит {MARRY_COST} 🪙, у тебя {coins_of(me.id)}. "
-                                   f"Заработай: «работать», «бонус»")
+                                   f"Заработай: «работать» и сообщения в чате")
     db.execute("INSERT OR REPLACE INTO marry_proposals(to_id,from_id,created) VALUES(?,?,?)",
                (other.id, me.id, time.time()))
     db.commit()
@@ -3746,12 +3794,11 @@ async def life_daily(bot):
         if days and days % ANNIV_DAYS == 0 and row["anniv_day"] != d:
             db.execute("UPDATE pairs SET anniv_day=? WHERE id=?", (d, row["id"]))
             db.commit()
-            for i in (row["a"], row["b"]):
-                give_coins(i, ANNIV_COINS)
+            spark_add(row["id"], ANNIV_SPARKS, "годовщина", "бот")
             try:
                 await send_with_pic(bot, CHAT_ID,
                                     f"🎂 {link(row['a'], uname(row['a']))} и {link(row['b'], uname(row['b']))} "
-                                    f"женаты уже {days} дн.! Подарок: +{ANNIV_COINS} 🪙 каждому",
+                                    f"женаты уже {days} дн.! Подарок паре: +{ANNIV_SPARKS} 🔥",
                                     ["отн:годовщина"], api_cat="happy")
             except Exception:
                 log.exception("anniv")
@@ -4331,7 +4378,7 @@ SECTION_LOVE = ("💞 <b>Отношения и семья</b>\n"
 SECTION_WORK = ("💼 <b>Работа и монеты</b>\n"
                 "«найти работу», «работать» (мини-игра на смене), «моя работа», «уволиться»\n"
                 "Должность растёт со сменами: Стажёр → Специалист → Старший → Эксперт → Мастер\n"
-                "🪙 «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»")
+                "🪙 «баланс», «магазин», «купить 1», «топ монет», «дуэли»")
 
 
 def menu_kb():
@@ -4358,7 +4405,7 @@ async def private_menu(update):
 
 
 # ============================ СТАТЬЯ С КОМАНДАМИ В TELEGRAPH ============================
-DOC_VER = "24-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
+DOC_VER = "25-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
 DOC_TITLE = "Команды бота " + CHAT_TAG
 DOC_SECTIONS = [
     ("📊 Активность и профиль", [
@@ -4409,10 +4456,10 @@ DOC_SECTIONS = [
         ("Карьера", "Стажёр → Специалист (10 смен) → Старший (30) → Эксперт (70) → Мастер (150), с наградой за повышение"),
     ]),
     ("🪙 Монеты и игры", [
-        ("«баланс», «бонус»", "кошелёк и ежедневный бонус"),
+        ("«баланс»", "кошелёк; монеты даются за сообщения (1 за 10) и за работу"),
         ("«магазин», «купить 1»", "магазин подарков"),
         ("«топ монет», «дуэли»", "рейтинги"),
-        ("/duel @юз, «дуэль»", "дуэль профилей"),
+        ("/duel @юз, «дуэль»", "дуэль профилей: соперник принимает или отказывается кнопкой"),
         ("/dice, /slots, /coin", "кости, слоты, монетка"),
         ("«мини игры»", "меню игр: угадай число, анаграмма, кто быстрее, виселица. «топ игр», «стоп игра»"),
         ("«репорт» + причина", "жалоба админам ответом на сообщение нарушителя"),
@@ -4736,6 +4783,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
     app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
     app.add_handler(CallbackQueryHandler(on_game_btn, pattern=r"^game:"))
+    app.add_handler(CallbackQueryHandler(on_challenge_btn, pattern=r"^ch:"))
     app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
