@@ -17,7 +17,7 @@ import time
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
-from telegram import (ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup,
+from telegram import (ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup,
                       LinkPreviewOptions, ReplyParameters, Update)
 from telegram.constants import ParseMode
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler, ContextTypes,
@@ -96,6 +96,7 @@ HELP_TEXT = (
     "🪙 Монеты: «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»\n"
     "💼 Работа: «найти работу», «работать» (мини-игра на смене), «моя работа», «уволиться»\n"
     "📜 «свидетельство»: свидетельство пары или брака\n"
+    "🎮 «мини игры» (кнопки): угадай число, анаграмма, кто быстрее, виселица; «топ игр»\n"
     "🎁 «свидание» (выбор места), «подарок партнёру» или «подарить цветы», «правила» чата; в браке: "
     "«семейный счёт», «в семью 100», «из семьи 100»\n"
     "💍 Брак: «предложить встречаться» → через пару дней «предложить брак» (ответом на сообщение), "
@@ -813,18 +814,22 @@ async def reply(update, text, **kw):
 
 
 async def cmd_start(update, context):
-    await update.effective_message.reply_text(START_TEXT)
+    private = update.effective_chat.type == "private"
+    await update.effective_message.reply_text(START_TEXT, reply_markup=menu_kb() if private else None)
 
 
 async def cmd_help(update, context):
-    await reply(update, HELP_TEXT)
+    private = update.effective_chat.type == "private"
+    if await send_commands_link(update):
+        return
+    await reply(update, HELP_TEXT, **({"reply_markup": menu_kb()} if private else {}))
 
 
 async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 21")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 24")
 
 
 def why_no_target(update, usage):
@@ -1336,6 +1341,7 @@ DEFAULT_RANKS = {
     "добавить товар": 4, "удалить товар": 4, "выдать монеты": 5, "заказы": 2, "выдан": 2,
     "добавить работу": 5, "удалить работу": 5, "список работ": 2, "журнал": 3,
     "установить приветствие": 3, "установить правила": 3, "статистика недели": 2,
+    "статья команд": 6,
 }
 ADMIN_TITLES = {
     1: "Мл. модератор", 2: "Старший модератор", 3: "Главный модератор",
@@ -3982,6 +3988,8 @@ async def on_gift_btn(update, context):
 
 # ---------- семейный счёт ----------
 async def handle_v21(update, context, clean):
+    if await games_text(update, context, clean, clean):
+        return True
     me = update.effective_user
     msg = update.effective_message
     m_in = re.match(r"^(?:в семью|положить в семью|пополнить семью)\s+(\d{1,7})$", clean)
@@ -4134,6 +4142,371 @@ async def cmd_weekstat(update, context):
     await reply(update, "\n".join(lines))
 
 
+# ============================ МИНИ-ИГРЫ ============================
+GAMES = {}                       # chat_id -> состояние текущей игры (одна игра на чат)
+GAME_LAST = {}                   # chat_id -> когда запускали последний раз
+GAME_EARNED = {}                 # (день, user_id) -> сколько монет уже получено с игр
+GAME_CAP, GAME_COOLDOWN, GAME_SEC = 200, 45, 180
+GAME_WORDS = ["компьютер", "телефон", "собака", "школа", "машина", "дорога", "солнце", "ракета", "планета",
+              "картина", "музыка", "шоколад", "зеркало", "подарок", "каникулы", "пирожное", "велосипед",
+              "магазин", "фонарик", "бабочка", "дракон", "корабль", "радуга", "виноград", "арбуз",
+              "подушка", "телевизор", "гитара", "программа", "сообщение", "чемпион", "приключение"]
+GAME_START = {"угадай число": "number", "анаграмма": "scramble", "кто быстрее": "speed", "виселица": "hang"}
+GAME_LIST_WORDS = {"мини игры", "мини-игры", "миниигры"}
+GAME_STOP_WORDS = {"стоп игра", "остановить игру"}
+HANG_MAX = 7
+
+
+db.execute("CREATE TABLE IF NOT EXISTS game_wins(user_id INTEGER PRIMARY KEY, wins INTEGER DEFAULT 0)")
+db.commit()
+
+
+def hang_mask(g):
+    return " ".join(c if c in g["opened"] else "_" for c in g["word"])
+
+
+async def game_win(update, uid, name, extra=""):
+    db.execute("INSERT INTO game_wins(user_id,wins) VALUES(?,1) ON CONFLICT(user_id) DO UPDATE SET wins=wins+1", (uid,))
+    db.commit()
+    w = db.execute("SELECT wins FROM game_wins WHERE user_id=?", (uid,)).fetchone()["wins"]
+    await reply(update, f"🏆 {link(uid, name)} побеждает! {extra}Побед в играх: {w}")
+
+
+def game_launch(chat_id, uid, kind):
+    """Запускает игру. -> (ok, текст)"""
+    g = GAMES.get(chat_id)
+    if g and time.time() > g["until"]:
+        GAMES.pop(chat_id, None)
+        g = None
+    if g:
+        return False, "Сейчас уже идёт игра, дождись конца или «стоп игра»."
+    wait = GAME_COOLDOWN - (time.time() - GAME_LAST.get(chat_id, 0))
+    if wait > 0:
+        return False, f"Игры можно запускать раз в {GAME_COOLDOWN} сек. Подожди ещё {int(wait) + 1} сек."
+    GAME_LAST[chat_id] = time.time()
+    g = {"kind": kind, "starter": uid, "until": time.time() + GAME_SEC}
+    if kind == "number":
+        g["n"] = random.randint(1, 100)
+        text = (f"🔢 Я загадал число от 1 до 100. Пишите числа, подскажу «больше» или «меньше». "
+                f"Время {GAME_SEC // 60} мин.")
+    elif kind == "scramble":
+        w = random.choice(GAME_WORDS)
+        letters = list(w)
+        for _ in range(10):
+            random.shuffle(letters)
+            if "".join(letters) != w:
+                break
+        g["word"] = w
+        text = f"🔤 Анаграмма: <b>{' '.join(letters).upper()}</b>\nКто первым напишет слово? Время {GAME_SEC // 60} мин."
+    elif kind == "speed":
+        w = random.choice(GAME_WORDS)
+        g["word"] = w
+        g["until"] = time.time() + 60
+        text = f"⚡️ Кто быстрее! Первый, кто напишет слово <b>{w}</b>, побеждает."
+    else:
+        g["word"] = random.choice(GAME_WORDS)
+        g["opened"] = set()
+        g["wrong"] = set()
+        text = (f"🪢 Виселица! Слово из {len(g['word'])} букв:\n<code>{hang_mask(g)}</code>\n"
+                f"Пишите по одной букве или слово целиком. Ошибок можно {HANG_MAX}.")
+    GAMES[chat_id] = g
+    return True, text
+
+
+def games_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔢 Угадай число", callback_data="game:number"),
+         InlineKeyboardButton("🔤 Анаграмма", callback_data="game:scramble")],
+        [InlineKeyboardButton("⚡️ Кто быстрее", callback_data="game:speed"),
+         InlineKeyboardButton("🪢 Виселица", callback_data="game:hang")]])
+
+
+async def on_game_btn(update, context):
+    q = update.callback_query
+    p = (q.data or "").split(":")
+    if len(p) != 2 or p[1] not in GAME_START.values():
+        return await q.answer()
+    ok, text = game_launch(q.message.chat_id, q.from_user.id, p[1])
+    if not ok:
+        return await q.answer(text, show_alert=True)
+    await q.answer()
+    await context.bot.send_message(q.message.chat_id, text, parse_mode=HTML)
+
+
+async def games_text(update, context, clean, text):
+    chat_id = update.effective_chat.id
+    me = update.effective_user
+    g = GAMES.get(chat_id)
+    if g and time.time() > g["until"]:
+        GAMES.pop(chat_id, None)
+        g = None
+        await reply(update, "⌛ Время игры вышло, никто не справился.")
+    if clean in GAME_LIST_WORDS:
+        await reply(update, "🎮 <b>Мини-игры</b> для всех участников\n"
+                            "Нажми кнопку или напиши: «угадай число», «анаграмма», «кто быстрее», «виселица».\n"
+                            "Остановить: «стоп игра». Рейтинг побед: «топ игр»",
+                    reply_markup=games_kb())
+        return True
+    if clean in ("топ игр", "рейтинг игр"):
+        rows = db.execute("SELECT g.user_id, g.wins, u.name FROM game_wins g LEFT JOIN users u ON u.user_id=g.user_id "
+                          "ORDER BY g.wins DESC LIMIT 10").fetchall()
+        if not rows:
+            await reply(update, "Пока никто не выигрывал. Начни: «мини игры» 🎮")
+        else:
+            await reply(update, "🏆 <b>Топ игроков</b>\n" + "\n".join(
+                f"{i}. {link(r['user_id'], r['name'] or str(r['user_id']))}: {r['wins']}" for i, r in enumerate(rows, 1)))
+        return True
+    if clean in GAME_STOP_WORDS:
+        if not g:
+            return False
+        if g["starter"] != me.id and rank_of(me) < 1:
+            return False
+        GAMES.pop(chat_id, None)
+        await reply(update, "🛑 Игра остановлена.")
+        return True
+    if clean in GAME_START:
+        ok, txt = game_launch(chat_id, me.id, GAME_START[clean])
+        await reply(update, txt)
+        return True
+    if not g:
+        return False
+    kind = g["kind"]
+    if kind == "number" and clean.isdigit() and len(clean) <= 4:
+        v = int(clean)
+        if v == g["n"]:
+            GAMES.pop(chat_id, None)
+            await game_win(update, me.id, disp(me), f"Число {v}! ")
+        else:
+            await reply(update, "⬆️ Больше" if v < g["n"] else "⬇️ Меньше")
+        return True
+    if kind in ("scramble", "speed") and clean == g["word"]:
+        GAMES.pop(chat_id, None)
+        await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ")
+        return True
+    if kind == "hang":
+        if clean == g["word"]:
+            GAMES.pop(chat_id, None)
+            await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ")
+            return True
+        if len(clean) == 1 and clean.isalpha():
+            if clean in g["opened"] or clean in g["wrong"]:
+                return True
+            if clean in g["word"]:
+                g["opened"].add(clean)
+                if all(c in g["opened"] for c in g["word"]):
+                    GAMES.pop(chat_id, None)
+                    await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ")
+                else:
+                    await reply(update, f"✅ Есть такая буква!\n<code>{hang_mask(g)}</code>")
+            else:
+                g["wrong"].add(clean)
+                left = HANG_MAX - len(g["wrong"])
+                if left <= 0:
+                    GAMES.pop(chat_id, None)
+                    await reply(update, f"💀 Виселица победила. Слово было: <b>{g['word']}</b>")
+                else:
+                    await reply(update, f"❌ Нет такой буквы. Осталось ошибок: {left}\n"
+                                        f"<code>{hang_mask(g)}</code>")
+            return True
+    return False
+
+
+# ============================ МЕНЮ В ЛИЧКЕ БОТА (кнопки внизу) ============================
+MENU_BTNS = ["📋 Команды", "🎮 Мини-игры", "💞 Отношения", "💼 Работа и монеты", "🛠 Для админов", "ℹ️ О боте"]
+SECTION_GAMES = ("🎮 <b>Мини-игры</b> (для всех, прямо в чате)\n"
+                 "• «мини игры»: меню с кнопками\n"
+                 "• «угадай число»: бот загадывает 1–100, все пишут числа\n"
+                 "• «анаграмма»: собери слово из перемешанных букв\n"
+                 "• «кто быстрее»: кто первым напишет слово\n"
+                 "• «виселица»: угадывайте слово по буквам\n"
+                 "• «топ игр»: рейтинг побед, «стоп игра»: остановить\n"
+                 "Ещё: /dice, /slots, /coin, «дуэль», викторина и квесты (/quests)")
+SECTION_LOVE = ("💞 <b>Отношения и семья</b>\n"
+                "«предложить отношения @юз» → кнопка «Да». Общий баланс пары это искры 🔥\n"
+                "Для партнёра с точкой: «.поцеловать», «.обнять», «.взять за руку»; обычное «поцеловать @юз» без искр\n"
+                "«свидание» (выбор места), «подарок партнёру», «моя пара», «список пар», «топ пар», «обида», «расстаться»\n"
+                "💍 «предложить брак» → «принять брак», «семья», «развод», «свидетельство»\n"
+                "В браке: «завести ребёнка», «дети», «семейный счёт», «в семью 100», «из семьи 100»\n"
+                "🏠 «дом», 🐾 «купить питомца», «питомцы», «покормить питомца», «мойпол м/ж»")
+SECTION_WORK = ("💼 <b>Работа и монеты</b>\n"
+                "«найти работу», «работать» (мини-игра на смене), «моя работа», «уволиться»\n"
+                "Должность растёт со сменами: Стажёр → Специалист → Старший → Эксперт → Мастер\n"
+                "🪙 «баланс», «бонус» (раз в день), «магазин», «купить 1», «топ монет», «дуэли»")
+
+
+def menu_kb():
+    return ReplyKeyboardMarkup([[MENU_BTNS[0]], [MENU_BTNS[1], MENU_BTNS[2]], [MENU_BTNS[3], MENU_BTNS[4]],
+                                [MENU_BTNS[5]]], resize_keyboard=True)
+
+
+async def private_menu(update):
+    """Личка с ботом: нажатия кнопок меню показывают разделы."""
+    msg = update.effective_message
+    key = re.sub(r"[^\w\s]", "", msg.text or "").strip().lower()
+    sections = {"команды": HELP_TEXT, "мини игры": SECTION_GAMES, "мини-игры": SECTION_GAMES,
+                "отношения": SECTION_LOVE, "работа и монеты": SECTION_WORK, "для админов": ADMIN_HELP,
+                "о боте": START_TEXT}
+    key = key.replace("миниигры", "мини игры")
+    text = next((v for k, v in sections.items() if key == k or key.endswith(" " + k)), None)
+    if text is HELP_TEXT and state_get("tgph_url"):
+        await send_commands_link(update)
+        return
+    if text:
+        await msg.reply_text(text, parse_mode=HTML, link_preview_options=NOPREV, reply_markup=menu_kb())
+    else:
+        await msg.reply_text("Выбери раздел кнопками внизу 👇", reply_markup=menu_kb())
+
+
+# ============================ СТАТЬЯ С КОМАНДАМИ В TELEGRAPH ============================
+DOC_VER = "24-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
+DOC_TITLE = "Команды бота " + CHAT_TAG
+DOC_SECTIONS = [
+    ("📊 Активность и профиль", [
+        ("/me, «профиль»", "твой профиль; ответом на сообщение или с @юз показывает чужой"),
+        ("/top, /week, /month", "топы активности за день, неделю и месяц (можно словами: топ, неделя, месяц)"),
+        ("/quests, «квесты»", "ежедневные задания"),
+        ("+реп", "ответом на сообщение или «+реп @юз» — репутация"),
+        ("/quiztop", "рейтинг викторины"),
+        ("/анрег, /рег", "выйти из созыва или вернуться"),
+        ("«правила»", "правила чата"),
+    ]),
+    ("🎭 РП-команды", [
+        ("поцеловать @юз", "или ответом на сообщение. Без искр и без эффектов для отношений"),
+        ("Список действий", "обнять, обнять крепко, поцеловать, погладить, дать пять, пожать руку, взять за руку, "
+                            "пощекотать, ткнуть, покормить, помахать, похвалить, ударить, пнуть, укусить, отшлёпать, убить"),
+        ("Картинка", "к действиям приходит гифка или картинка"),
+    ]),
+    ("💞 Отношения", [
+        ("предложить отношения @юз", "потом у человека 2 минуты, чтобы нажать «Да» или «Нет» (или написать «принять» / «отказать»)"),
+        (".поцеловать, .обнять, .взять за руку…", "действия с точкой работают на партнёра и дают искры 🔥"),
+        ("«свидание»", "выбор места: парк, кино, ресторан, концерт; раз в день"),
+        ("«подарок партнёру»", "или «подарить цветы / шоколад / мишку / украшение» — подарки за монеты, дают искры"),
+        ("«моя пара», «пара @юз»", "профиль пары: искры, уровень, срок вместе, кнопки"),
+        ("«список пар», «топ пар»", "все пары и рейтинги"),
+        ("«обида»", "обидеться на партнёра (повтор снимает обиду, пока обида включена, действия недоступны)"),
+        ("«расстаться»", "расторжение кнопкой"),
+        ("«мойпол м» / «мойпол ж»", "пол для правильных окончаний в текстах"),
+        ("Искры 🔥", "общий баланс пары: растёт от действий, свиданий, подарков и работы, тратится раз в сутки; на нуле пара распадается"),
+    ]),
+    ("💍 Брак и семья", [
+        ("«предложить брак @юз»", "через пару дней отношений, нужны искры и монеты на свадьбу"),
+        ("«принять брак» / «отказать в браке»", "ответ на предложение"),
+        ("«свидетельство»", "картинка-свидетельство пары или брака"),
+        ("«семья»", "профиль семьи"),
+        ("«завести ребёнка», «дети», «назвать ребёнка Имя»", "дети в браке"),
+        ("«семейный счёт», «в семью 100», «из семьи 100»", "общий счёт супругов"),
+        ("«развод»", "расторжение брака"),
+    ]),
+    ("🏠 Дом и питомцы", [
+        ("«дом»", "купить жильё: комната, квартира, дом, особняк. Даёт бонус к зарплате"),
+        ("«купить питомца», «питомцы»", "кот, собака, хомяк, попугай, кролик, лиса"),
+        ("«покормить питомца», «назвать питомца Имя»", "уход за питомцами; без кормления питомец убегает"),
+    ]),
+    ("💼 Работа", [
+        ("«найти работу»", "вам предлагают работы; лучшие открываются по уровню, времени в чате и числу сообщений"),
+        ("«работать»", "выйти на смену: мини-игра (курьер развозит заказы людям из чата, остальные решают задания)"),
+        ("«моя работа», «уволиться»", "статус и смена работы"),
+        ("Карьера", "Стажёр → Специалист (10 смен) → Старший (30) → Эксперт (70) → Мастер (150), с наградой за повышение"),
+    ]),
+    ("🪙 Монеты и игры", [
+        ("«баланс», «бонус»", "кошелёк и ежедневный бонус"),
+        ("«магазин», «купить 1»", "магазин подарков"),
+        ("«топ монет», «дуэли»", "рейтинги"),
+        ("/duel @юз, «дуэль»", "дуэль профилей"),
+        ("/dice, /slots, /coin", "кости, слоты, монетка"),
+        ("«мини игры»", "меню игр: угадай число, анаграмма, кто быстрее, виселица. «топ игр», «стоп игра»"),
+        ("«репорт» + причина", "жалоба админам ответом на сообщение нарушителя"),
+    ]),
+    ("🎁 NFT", [
+        ("!ссылка на NFT", "например «!t.me/nft/...»: карточка и анимация; можно несколько ссылок сразу"),
+    ]),
+    ("🛠 Для админов (по рангам)", [
+        ("мут 30 @юз причина", "время: 30, 2ч, 1д. Также «размут», «список мута»"),
+        ("бан, разбан", "ответом или @юз"),
+        ("тег Текст, снять тег", "тег участнику"),
+        ("повысить 2, разжаловать, админы", "ранги 1–8 (повысить только 8 ранг)"),
+        ("дк мут 2", "с какого ранга доступна команда («дк» без цифры покажет все)"),
+        ("добавить картинку обнять", "ответом на гифку, картинку или видео; для отношений: добавить картинку отн поцелуй"),
+        ("список картинок, очистить картинки", "управление картинками действий"),
+        ("добавить товар Мишка 500, удалить товар 1", "магазин; «заказы», «выдан 5»"),
+        ("выдать монеты @юз 100", "отрицательное число забирает"),
+        ("добавить работу Грузчик 45 3 ур=2", "оплата за смену, пауза в часах, условия ур=, дн=, сообщ=; «удалить работу», «список работ»"),
+        ("журнал [N]", "последние действия админов"),
+        ("установить приветствие Привет, {name}!", "приветствие новичков («выкл» отключает)"),
+        ("установить правила Текст", "правила для команды «правила»"),
+        ("статистика, статистика недели, слова дня, итоги", "статистика чата"),
+        ("запустить вопрос, запустить викторину", "активности для чата"),
+    ]),
+]
+
+
+def doc_nodes():
+    nodes = [{"tag": "p", "children": [f"Все команды бота {CHAT_TAG}. Писать можно словами, без слеша, "
+                                       "если не указано иное. «@юз» можно заменить ответом на сообщение."]}]
+    for title, items in DOC_SECTIONS:
+        nodes.append({"tag": "h3", "children": [title]})
+        nodes.append({"tag": "ul", "children": [
+            {"tag": "li", "children": [{"tag": "b", "children": [cmd]}, " — " + desc]} for cmd, desc in items]})
+    nodes.append({"tag": "p", "children": [{"tag": "i", "children": ["Статья обновляется ботом автоматически."]}]})
+    return nodes
+
+
+async def telegraph_sync(force=False):
+    """Создаёт или обновляет статью. -> ссылка или None."""
+    import httpx
+    if not force and state_get("tgph_ver") == DOC_VER and state_get("tgph_url"):
+        return state_get("tgph_url")
+    content = json.dumps(doc_nodes(), ensure_ascii=False)
+    async with httpx.AsyncClient(timeout=25) as c:
+        token = state_get("tgph_token")
+        if not token:
+            r = (await c.post("https://api.telegra.ph/createAccount", data={
+                "short_name": "clavekbot", "author_name": CHAT_TAG})).json()
+            if not r.get("ok"):
+                raise RuntimeError(f"createAccount: {r}")
+            token = r["result"]["access_token"]
+            state_set("tgph_token", token)
+        path = state_get("tgph_path")
+        if path:
+            r = (await c.post("https://api.telegra.ph/editPage", data={
+                "access_token": token, "path": path, "title": DOC_TITLE, "content": content,
+                "author_name": CHAT_TAG})).json()
+            if not r.get("ok"):
+                path = None          # статью не нашли, создадим заново
+        if not path:
+            r = (await c.post("https://api.telegra.ph/createPage", data={
+                "access_token": token, "title": DOC_TITLE, "content": content,
+                "author_name": CHAT_TAG})).json()
+        if not r.get("ok"):
+            raise RuntimeError(f"telegraph: {r}")
+        state_set("tgph_path", r["result"]["path"])
+        state_set("tgph_url", r["result"]["url"])
+        state_set("tgph_ver", DOC_VER)
+        return r["result"]["url"]
+
+
+async def send_commands_link(update, markup=None):
+    """Ссылка на статью с командами (если статья есть), иначе обычный текст справки."""
+    url = state_get("tgph_url")
+    m = update.effective_message
+    if not url:
+        return False
+    kb = [[InlineKeyboardButton("📖 Посмотреть команды", url=url)]]
+    await m.reply_text(f"⚙️ <b>Полный список команд в нашей <a href=\"{url}\">статье</a></b>",
+                       parse_mode=HTML, reply_markup=InlineKeyboardMarkup(kb) if not markup else markup)
+    return True
+
+
+@need("статья команд")
+async def cmd_doc_update(update, context):
+    try:
+        url = await telegraph_sync(force=True)
+        await reply(update, f"✅ Статья обновлена: {url}")
+    except Exception as e:
+        log.exception("telegraph")
+        await reply(update, f"Не вышло опубликовать статью: {esc(repr(e)[:200])}")
+
+
 # Команды обычными словами (сообщение целиком, без слеша)
 USER_ALIASES = {
     "помощь": cmd_help, "команды": cmd_help, "хелп": cmd_help,
@@ -4174,6 +4547,7 @@ ADMIN_ALIASES = {
     "установить приветствие": (cmd_set_welcome, "установить приветствие", 80),
     "установить правила": (cmd_set_rules, "установить правила", 200),
     "статистика недели": (cmd_weekstat, "статистика недели", 0),
+    "обновить статью": (cmd_doc_update, "статья команд", 0),
 }
 
 
@@ -4210,7 +4584,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not user or user.is_bot or not msg.text:
         return
     if chat.type == "private":
-        return
+        return await private_menu(update)
     if chat.id not in ALLOWED:
         return
     touch(user)
@@ -4315,6 +4689,11 @@ async def post_init(app):
         print("! Старая версия библиотеки: «лучшее сообщение дня» не работает. "
               "Обнови: py -3.14 -m pip install -U python-telegram-bot")
     print("Бот должен быть АДМИНОМ чата (иначе он не видит реакции и не может мутить/банить).")
+    try:
+        url = await telegraph_sync()
+        print(f"Статья с командами: {url}")
+    except Exception as e:
+        print("Статья в Telegraph не опубликована:", repr(e)[:200])
     app.create_task(scheduler(app))
 
 
@@ -4356,6 +4735,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_life_btn, pattern=r"^life:"))
     app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
     app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
+    app.add_handler(CallbackQueryHandler(on_game_btn, pattern=r"^game:"))
     app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
