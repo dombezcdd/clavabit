@@ -4867,9 +4867,22 @@ async def post_init(app):
 
 
 async def post_start(app):
-    # post_start вызывается после Application.start(), поэтому фоновая
-    # задача создаётся уже при запущенном приложении.
-    app.create_task(scheduler(app), name="bot-scheduler")
+    # Отдельная задача с явным управлением жизненным циклом.
+    # Она запускается после Application.start() и отменяется в post_stop,
+    # чтобы event loop не закрывался с незавершённой coroutine.
+    task = asyncio.create_task(scheduler(app), name="bot-scheduler")
+    app.bot_data["scheduler_task"] = task
+
+
+async def post_stop(app):
+    # Корректно останавливаем scheduler до закрытия event loop.
+    task = app.bot_data.pop("scheduler_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 def main():
@@ -4882,7 +4895,7 @@ def main():
         print("Нет токена. Вставь его в TOKEN в bot.py или положи в файл token.txt рядом с ботом.")
         return
     app = (Application.builder().token(token).post_init(post_init)
-           .post_start(post_start).build())
+           .post_start(post_start).post_stop(post_stop).build())
     for name, fn in (
         ("start", cmd_start), ("help", cmd_help), ("id", cmd_id), ("me", cmd_me),
         ("top", cmd_top), ("week", cmd_week), ("month", cmd_month),
