@@ -40,6 +40,7 @@ TOKEN = ""                    # вставь токен от @BotFather ИЛИ �
 CHAT_ID = -1004318004202          # основной чат
 TEST_CHAT_ID = -1002299660550                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
 OWNER_USERNAME = "bloya"        # владелец (без @)
+OWNER_ID = (os.environ.get("OWNER_ID") or "").strip()   # числовой id владельца (надёжнее имени), можно задать в переменных хостинга
 CHANNEL = "@clubClaveka"
 CHAT_TAG = "@clavekchat"
 
@@ -320,7 +321,7 @@ def now():
 # ---- экономика (меняй числа здесь) ----
 MSG_COINS_EVERY = 30       # 1 монета за каждые N сообщений
 SHOP_PRICE_MULT = 3        # множитель цен в магазине подарков (цена из «добавить товар» умножается)
-JOB_PAY_MULT = 0.5         # множитель зарплаты на работах
+JOB_PAY_MULT = 0.4          # множитель зарплаты на работах (меньше = монет меньше)
 
 
 def today():
@@ -346,6 +347,8 @@ def urow(uid):
 def touch(user):
     uid, name = user.id, disp(user)
     un = (user.username or "").lower()
+    if un:
+        db.execute("UPDATE users SET username='' WHERE username=? AND user_id!=?", (un, uid))
     if urow(uid):
         db.execute("UPDATE users SET name=?, username=? WHERE user_id=?", (name, un, uid))
     else:
@@ -355,8 +358,8 @@ def touch(user):
 
 
 def find_by_username(un):
-    r = db.execute("SELECT * FROM users WHERE username=?", (un.lstrip("@").lower(),)).fetchone()
-    return r
+    rows = db.execute("SELECT * FROM users WHERE username=? ORDER BY last_seen DESC", (un.lstrip("@").lower(),)).fetchall()
+    return rows[0] if len(rows) == 1 else None      # неоднозначное имя не принимаем
 
 
 def tagged(row):
@@ -368,11 +371,13 @@ def tagged(row):
 def is_owner(user):
     if not user:
         return False
+    if OWNER_ID:
+        return str(user.id) == OWNER_ID
     oid = state_get("owner_id")
-    if oid and str(user.id) == oid:
-        return True
+    if oid:
+        return str(user.id) == oid          # ID уже сохранён: имя больше не проверяем
     if (user.username or "").lower() == OWNER_USERNAME.lower():
-        state_set("owner_id", user.id)
+        state_set("owner_id", user.id)      # самый первый раз определяем по имени и закрепляем ID
         return True
     return False
 
@@ -565,10 +570,12 @@ def add_counted(uid, message_id, is_reply):
         best = max(best, streak)
         if streak in STREAK_MILESTONES:
             ev.append(f"🔥 {link(uid, u['name'])} в серии уже {streak} дн. подряд!")
+    cur = db.execute("INSERT OR IGNORE INTO msgs(message_id,user_id,day) VALUES(?,?,?)", (message_id, uid, d))
+    if cur.rowcount == 0:                      # это сообщение уже учтено
+        db.commit()
+        return []
     db.execute("UPDATE users SET total=total+1, streak=?, best_streak=?, last_day=?, last_seen=? "
                "WHERE user_id=?", (streak, best, d, time.time(), uid))
-    db.execute("INSERT OR IGNORE INTO msgs(message_id,user_id,day) VALUES(?,?,?)",
-               (message_id, uid, d))
     db.commit()
     bump(uid, "cnt")
     if (u["total"] + 1) % MSG_COINS_EVERY == 0:
@@ -729,6 +736,18 @@ async def tick(app):
     ):
         sched = n.replace(hour=h, minute=m, second=0, microsecond=0)
         if n >= sched and (n - sched) < timedelta(hours=2) and state_get("ran_" + name) != d:
+            if name == "relations":
+                tries = int(float(state_get("tries_relations") or 0)) if state_get("tries_day") == d else 0
+                if tries >= 5:
+                    continue
+                state_set("tries_day", d)
+                state_set("tries_relations", tries + 1)
+                try:
+                    await fn()
+                    state_set("ran_" + name, d)
+                except Exception:
+                    log.exception("relations (попытка %s)", tries + 1)
+                continue
             state_set("ran_" + name, d)
             await fn()
 
@@ -832,7 +851,7 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 26")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 29")
 
 
 def why_no_target(update, usage):
@@ -1226,13 +1245,30 @@ async def fetch_nft_source(name, num):
     return None
 
 
+async def _nft_build(update, found, tmp):
+    srcs = [await fetch_nft_source(n, u) for n, u in found]
+    srcs = [s for s in srcs if s]
+    lot = [(s[1], s[2], s[3]) for s in srcs if s[0] == "lottie"]
+    files = [s[1] for s in srcs if s[0] == "file"]
+    tmp += files
+    if lot:
+        gif = os.path.join(BASE, f"nft_{update.effective_message.message_id}.gif")
+        tmp.append(gif)
+        async with NFT_LOCK:
+            await asyncio.to_thread(_cards_to_gif, lot, gif)
+        return gif
+    return files[0] if files else None
+
+
 async def handle_nft(update, context, text):
     found = []
     for mm in NFT_RE.finditer(text):
         key = (mm.group(1), mm.group(2))
         if key not in found:
             found.append(key)
-    found = found[:6]
+    found = found[:3]
+    if not cooldown(("nft", update.effective_user.id), 20):
+        return await update.effective_message.reply_text("Подожди немного перед следующей NFT-ссылкой ⏳")
     caps = []
     for name, num in found:
         caps.append(f"🎁 <b>{esc(re.sub(r'(?<!^)(?=[A-Z])', ' ', name))}</b> #{esc(num)}")
@@ -1241,18 +1277,7 @@ async def handle_nft(update, context, text):
     gif, tmp = None, []
     try:
         await context.bot.send_chat_action(update.effective_chat.id, "upload_video")
-        srcs = [await fetch_nft_source(n, u) for n, u in found]
-        srcs = [s for s in srcs if s]
-        lot = [(s[1], s[2], s[3]) for s in srcs if s[0] == "lottie"]
-        files = [s[1] for s in srcs if s[0] == "file"]
-        tmp += files
-        if lot:
-            gif = os.path.join(BASE, f"nft_{update.effective_message.message_id}.gif")
-            tmp.append(gif)
-            async with NFT_LOCK:
-                await asyncio.to_thread(_cards_to_gif, lot, gif)
-        elif files:
-            gif = files[0]
+        gif = await asyncio.wait_for(_nft_build(update, found, tmp), 120)
     except ImportError:
         print("NFT: не установлены rlottie-python/Pillow. Выполни: py -m pip install rlottie-python Pillow")
     except Exception as e:
@@ -1271,6 +1296,11 @@ async def handle_nft(update, context, text):
                     os.remove(p)
                 except OSError:
                     pass
+    for p in tmp:
+        try:
+            os.remove(p)
+        except OSError:
+            pass
     links = "\n".join(f"<a href=\"https://t.me/nft/{n}-{u}\">Открыть NFT {esc(n)} #{esc(u)}</a>" for n, u in found)
     await update.effective_message.reply_text(
         f"{caption}\n{links}", parse_mode=HTML,
@@ -1328,7 +1358,8 @@ async def run_duel(bot, chat, a_id, b_id, reply_to=None):
 
 
 CHALLENGE_SEC = 120
-CHALLENGE_DONE = set()
+db.execute("CREATE TABLE IF NOT EXISTS challenge_done(chat_id INTEGER, message_id INTEGER, ts REAL, PRIMARY KEY(chat_id, message_id))")
+db.commit()
 
 
 def challenge_kb(kind, a, b):
@@ -1361,12 +1392,12 @@ async def on_challenge_btn(update, context):
     kind, a, b, ans, ts = p[1], int(p[2]), int(p[3]), p[4], int(p[5]) if p[5].isdigit() else 0
     if q.from_user.id != b:
         return await q.answer("Этот вызов адресован не тебе", show_alert=True)
-    key = (q.message.chat_id, q.message.message_id)
-    if key in CHALLENGE_DONE:
-        return await q.answer()
-    CHALLENGE_DONE.add(key)
-    if len(CHALLENGE_DONE) > 500:
-        CHALLENGE_DONE.clear()
+    cur = db.execute("INSERT OR IGNORE INTO challenge_done(chat_id,message_id,ts) VALUES(?,?,?)",
+                     (q.message.chat_id, q.message.message_id, time.time()))
+    db.execute("DELETE FROM challenge_done WHERE ts<?", (time.time() - 7 * 86400,))
+    db.commit()
+    if cur.rowcount == 0:
+        return await q.answer()                 # этот вызов уже обработан (в том числе до перезапуска)
     try:
         await q.message.edit_reply_markup(reply_markup=None)
     except Exception:
@@ -1589,6 +1620,8 @@ async def cmd_unmute(update, context):
     if not uid:
         return await reply(update, why_no_target(
             update, "Ответь на сообщение участника или укажи @юзернейм: размут"))
+    if uid != update.effective_user.id and not can_act_on(update.effective_user, uid):
+        return await reply(update, "Нельзя снять ограничение с участника, чей ранг не ниже твоего.")
     try:
         await context.bot.restrict_chat_member(
             update.effective_chat.id, uid, ChatPermissions.all_permissions())
@@ -2111,6 +2144,16 @@ REL_TXT_DECLINE = [
     "🥀 Сердце {a} дрогнуло: {b} ответил{ea} «нет». Но всё ещё впереди.",
     "🌧 {b} пока не готов{ea} к отношениям с {a}. Дружба тоже красиво.",
 ]
+try:
+    db.execute("ALTER TABLE marry_proposals ADD COLUMN pair_id INTEGER")
+except sqlite3.OperationalError:
+    pass
+try:
+    db.execute("ALTER TABLE pairs ADD COLUMN maint_day TEXT")
+except sqlite3.OperationalError:
+    pass
+db.commit()
+
 PROPOSE = {"предложить отношения", "предложить встречаться", "встречаться"}
 ACCEPT = {"принять", "принимаю", "согласна", "согласен"}
 DECLINE = {"отказать", "отказываюсь", "отказаться"}
@@ -2226,6 +2269,16 @@ def offended_block(me_id, other_id):
 
 
 def delete_pair(pid):
+    row = pair_by_id(pid)
+    if row:
+        bank = (row["bank"] or 0) if "bank" in row.keys() else 0
+        if bank > 0:                                  # семейный счёт делится поровну
+            db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (bank // 2, row["a"]))
+            db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (bank - bank // 2, row["b"]))
+        db.execute("DELETE FROM marry_proposals WHERE from_id IN (?,?) OR to_id IN (?,?)",
+                   (row["a"], row["b"], row["a"], row["b"]))
+        db.execute("DELETE FROM proposals WHERE from_id IN (?,?) OR to_id IN (?,?)",
+                   (row["a"], row["b"], row["a"], row["b"]))
     db.execute("DELETE FROM pairs WHERE id=?", (pid,))
     db.execute("DELETE FROM kids WHERE pair_id=?", (pid,))
     db.commit()
@@ -2262,11 +2315,13 @@ def pair_kb(uid):
         [B("📊 История", callback_data=f"rel:menu:hist:{uid}")]])
 
 
-async def rel_answer(bot, chat_id, me_id, accept, reply_to=None):
+async def rel_answer(bot, chat_id, me_id, accept, reply_to=None, token=None):
     """Ответ на предложение отношений (слова или кнопки). True, если предложение было."""
     pr = db.execute("SELECT * FROM proposals WHERE to_id=?", (me_id,)).fetchone()
     if not pr:
         return False
+    if token is not None and int(pr["created"]) != token:
+        return False                            # кнопка от старого предложения
     db.execute("DELETE FROM proposals WHERE to_id=?", (me_id,))
     db.commit()
     a = pr["from_id"]
@@ -2308,7 +2363,7 @@ async def rel_leave_ask(update, context):
                                 InlineKeyboardButton("Отмена", callback_data=f"rel:cancel:{me.id}")]])
     await send_with_pic(context.bot, update.effective_chat.id,
                         f"💔 {link(me.id, disp(me))}, вы действительно хотите расторгнуть отношения с "
-                        f"{link(p, uname(p))}? Это действие навсегда, вместе с парой пропадут искры и дети."
+                        f"{link(p, uname(p))}? Это действие навсегда: искры и дети пропадут, монеты семейного счёта делятся поровну."
                         + cost, [], reply_to=update.effective_message.message_id, markup=kb)
     return True
 
@@ -2485,11 +2540,12 @@ async def handle_relation(update, context, low):
             await say(f"У {esc(disp(other))} уже есть пара.")
         else:
             touch(other)
+            ts = int(time.time())
             db.execute("INSERT OR REPLACE INTO proposals(to_id,from_id,created,msg_id) VALUES(?,?,?,?)",
-                       (other.id, me.id, time.time(), msg.message_id))
+                       (other.id, me.id, ts, msg.message_id))
             db.commit()
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("💖 Да", callback_data=f"rel:yes:{other.id}"),
-                                        InlineKeyboardButton("💔 Нет", callback_data=f"rel:no:{other.id}")]])
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("💖 Да", callback_data=f"rel:yes:{ts}:{other.id}"),
+                                        InlineKeyboardButton("💔 Нет", callback_data=f"rel:no:{ts}:{other.id}")]])
             await say(random.choice(REL_TXT_PROPOSE).format(a=link(me.id, disp(me)),
                                                             b=link(other.id, disp(other))),
                       "предложение", kb)
@@ -2564,7 +2620,8 @@ async def on_rel_btn(update, context):
 
     if kind in ("yes", "no"):
         touch(q.from_user)
-        ok = await rel_answer(bot, chat, uid, kind == "yes", mid)
+        tok = int(p[2]) if len(p) == 4 and p[2].isdigit() else -1
+        ok = await rel_answer(bot, chat, uid, kind == "yes", mid, tok)
         await q.answer("Готово" if ok else "Предложение уже неактуально")
         return await drop_markup()
     if kind == "leave":
@@ -2634,29 +2691,33 @@ async def on_rel_btn(update, context):
 
 
 async def rel_daily(bot):
-    """Раз в сутки: списываем содержание пар, предупреждаем и расторгаем, когда искры кончились."""
-    for row in db.execute("SELECT * FROM pairs").fetchall():
+    """Раз в сутки: списываем содержание пар. Данные читаются заново и меняются без пауз между чтением и записью."""
+    d = today()
+    for pid in [r["id"] for r in db.execute("SELECT id FROM pairs").fetchall()]:
         try:
+            row = pair_by_id(pid)
+            if not row or (row["maint_day"] or "") == d:
+                continue                                    # пары нет или сегодня уже обслужена
             up = upkeep(row)
-            new = row["love"] - up
             a, b = row["a"], row["b"]
             names = f"{link(a, uname(a))} и {link(b, uname(b))}"
-            if new <= 0:
-                if row["married_at"]:
-                    new = 10
-                else:
-                    dur = fmt_dur(time.time() - row["since"])
-                    delete_pair(row["id"])
-                    await send_with_pic(bot, CHAT_ID,
-                                        f"💔 Отношения между {names}, длившиеся {dur}, были завершены: "
-                                        f"искры закончились.", ["отн:расставание"])
-                    continue
-            db.execute("UPDATE pairs SET love=? WHERE id=?", (new, row["id"]))
+            if row["love"] - up <= 0 and not row["married_at"]:
+                dur = fmt_dur(time.time() - row["since"])
+                delete_pair(pid)
+                await send_with_pic(bot, CHAT_ID,
+                                    f"💔 Отношения между {names}, длившиеся {dur}, были завершены: "
+                                    f"искры закончились.", ["отн:расставание"])
+                continue
+            # одна короткая операция: относительное списание + отметка «обслужена»
+            db.execute("UPDATE pairs SET love=CASE WHEN love-?<=0 THEN 10 ELSE love-? END, maint_day=? WHERE id=?",
+                       (up, up, d, pid))
+            fresh = pair_by_id(pid)
             db.execute("INSERT INTO spark_log(pair_id,delta,reason,who,ts,bal) VALUES(?,?,?,?,?,?)",
-                       (row["id"], -up, "ежедневное содержание", "", time.time(), new))
+                       (pid, fresh["love"] - row["love"], "ежедневное содержание", "", time.time(), fresh["love"]))
             db.commit()
-            nxt = upkeep(pair_by_id(row["id"]))
-            if new < nxt and not row["married_at"]:
+            new = fresh["love"]
+            nxt = upkeep(fresh)
+            if new < nxt and not fresh["married_at"]:
                 await send_with_pic(
                     bot, CHAT_ID,
                     f"🚨 Отношения между {names} на грани распада! Осталось {new} искр, а для содержания "
@@ -2666,14 +2727,16 @@ async def rel_daily(bot):
             log.exception("rel_daily")
 
 
+
 # ============================ МОНЕТЫ, МАГАЗИН, ЖАЛОБЫ ============================
 COIN = "🪙"
 BONUS_BASE = 20
 
 
-def give_coins(uid, n):
+def give_coins(uid, n, commit=True):
     db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (n, uid))
-    db.commit()
+    if commit:
+        db.commit()
 
 
 def coins_of(uid):
@@ -3143,7 +3206,7 @@ async def send_certificate(bot, chat_id, row, married, reply_to=None, caption=No
 
 # ============================ ЖИЗНЬ: РАБОТЫ, БРАК, ДОМА, ПИТОМЦЫ ============================
 # Все цифры тут: меняй под свой чат.
-JOBS = {   # ключ: (название, 🪙 за смену, пауза между сменами в часах, требования)
+JOBS = {   # ключ: (название, награда (масштаб искр паре), пауза между сменами в часах, требования)
     "курьер":      ("Курьер", 20, 2, {}),
     "уборщик":     ("Уборщик", 25, 2, {}),
     "продавец":    ("Продавец", 35, 3, {"days": 2}),
@@ -3361,14 +3424,15 @@ async def life_work(update, context):
             text = (f"🧹 <b>Уборка.</b> Наведите порядок: напишите слово «{answer}»" if job == "уборщик"
                     else f"🛠 <b>Рабочее задание.</b> Напишите слово «{answer}»")
             hint = f"\n\nВремя: {TASK_MIN} мин."
+    created = time.time()
     db.execute("INSERT OR REPLACE INTO job_tasks(user_id,job,kind,answer,target_id,created,expires) "
-               "VALUES(?,?,?,?,?,?,?)", (me.id, job, kind, answer, target, time.time(),
-                                        time.time() + TASK_MIN * 60))
+               "VALUES(?,?,?,?,?,?,?)", (me.id, job, kind, answer, target, created,
+                                        created + TASK_MIN * 60))
     db.execute("UPDATE users SET last_work=? WHERE user_id=?", (time.time(), me.id))
     db.commit()
     kb = None
     if kind == "deliver":
-        kb = own_kb([[InlineKeyboardButton("✅ Выполнить", callback_data=f"life:done:{me.id}:x")]])
+        kb = own_kb([[InlineKeyboardButton("✅ Выполнить", callback_data=f"life:done:{me.id}:{int(created)}")]])
     await life_send(update, context, f"{link(me.id, disp(me))}, новое задание!\n{text}{hint}", key="раб:" + job,
                     api="thumbsup", gif=JOB_GIF.get(job), kb=kb)
 
@@ -3378,10 +3442,12 @@ async def finish_task(bot, chat_id, uid, reply_to=None):
     row = urow(uid)
     if not t or not row:
         return
-    db.execute("DELETE FROM job_tasks WHERE user_id=?", (uid,))
+    cur = db.execute("DELETE FROM job_tasks WHERE user_id=?", (uid,))
     db.commit()
-    if row["job"] not in JOBS:
-        return
+    if cur.rowcount == 0:
+        return                                  # задание уже закрыто (двойное нажатие)
+    if row["job"] not in JOBS or t["job"] != row["job"]:
+        return                                  # профессию сменили: за прежнее задание не платим
     pay = job_pay(row)
     note = ""
     r = random.random()
@@ -3397,8 +3463,8 @@ async def finish_task(bot, chat_id, uid, reply_to=None):
     give_coins(uid, pay)
     for _i, (_n, _nm) in enumerate(CAREER):
         if _i and _n == shifts:
-            give_coins(uid, 50 * _i)
-            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{50 * _i} 🪙"
+            give_coins(uid, 25 * _i)
+            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{25 * _i} 🪙"
     spark_note = ""
     pr_ = pair_of(uid)
     if pr_:
@@ -3446,6 +3512,9 @@ async def life_job_quit(update, context):
     row = urow(me.id)
     if row["job"] not in JOBS:
         return await reply(update, "Ты и так без работы 🙂")
+    t = open_task(me.id)
+    if t and t["expires"] > time.time():
+        return await reply(update, "Сначала закончи текущую смену, потом можно уволиться.")
     db.execute("UPDATE users SET job='' WHERE user_id=?", (me.id,))
     db.commit()
     await reply(update, f"📤 Ты уволился с должности «{JOBS[row['job']][0]}». Новая работа: «найти работу»")
@@ -3476,8 +3545,8 @@ async def life_marry_propose(update, context):
     if coins_of(me.id) < MARRY_COST:
         return await reply(update, f"Свадьба стоит {MARRY_COST} 🪙, у тебя {coins_of(me.id)}. "
                                    f"Заработай: «работать» и сообщения в чате")
-    db.execute("INSERT OR REPLACE INTO marry_proposals(to_id,from_id,created) VALUES(?,?,?)",
-               (other.id, me.id, time.time()))
+    db.execute("INSERT OR REPLACE INTO marry_proposals(to_id,from_id,created,pair_id) VALUES(?,?,?,?)",
+               (other.id, me.id, time.time(), row["id"]))
     db.commit()
     await life_send(update, context,
                     f"💍 {link(me.id, disp(me))} делает предложение {link(other.id, disp(other))}!\n"
@@ -3499,11 +3568,14 @@ async def life_marry_answer(update, context, accept):
     if not accept:
         return await reply(update, f"💔 {link(me.id, disp(me))} отказал{ea(me.id)} {link(a, uname(a))} в браке.")
     row = pair_of(me.id)
-    if not row or partner_of(row, me.id) != a or is_married(row):
+    if (not row or partner_of(row, me.id) != a or is_married(row)
+            or (pr["pair_id"] is not None and row["id"] != pr["pair_id"])):
         return await reply(update, "Что-то изменилось, свадьба не получится.")
+    if int((time.time() - row["since"]) // 86400) < MARRY_MIN_DAYS or row["love"] < MARRY_MIN_LOVE:
+        return await reply(update, "Условия свадьбы (срок отношений и искры) сейчас не выполнены.")
     if coins_of(a) < MARRY_COST:
         return await reply(update, f"У {esc(uname(a))} не хватило монет на свадьбу ({MARRY_COST} 🪙).")
-    give_coins(a, -MARRY_COST)
+    give_coins(a, -MARRY_COST, commit=False)
     db.execute("UPDATE pairs SET married_at=?, last_action=? WHERE id=?", (time.time(), time.time(), row["id"]))
     db.commit()
     spark_add(row["id"], 200, "свадьба", uname(a))
@@ -3523,9 +3595,8 @@ async def life_divorce(update, context):
     if coins_of(me.id) < DIVORCE_COST:
         return await reply(update, f"Развод стоит {DIVORCE_COST} 🪙, а у тебя {coins_of(me.id)}.")
     p = partner_of(row, me.id)
-    give_coins(me.id, -DIVORCE_COST)
-    db.execute("DELETE FROM pairs WHERE id=?", (row["id"],))
-    db.commit()
+    give_coins(me.id, -DIVORCE_COST, commit=False)
+    delete_pair(row["id"])
     await life_send(update, context,
                     f"💔 {link(me.id, disp(me))} подал(а) на развод с {link(p, uname(p))} (−{DIVORCE_COST} 🪙).",
                     key="отн:развод", api="cry")
@@ -3657,8 +3728,9 @@ async def on_life_btn(update, context):
         return await q.answer("Это меню другого человека. Напиши команду сам 🙂", show_alert=True)
     if kind == "done":
         t = open_task(uid)
-        if not t or t["expires"] < time.time():
-            return await q.answer("Задание уже недоступно", show_alert=True)
+        if (not t or t["expires"] < time.time() or t["kind"] != "deliver"
+                or str(int(t["created"])) != key):
+            return await q.answer("Эта кнопка от другого задания, она уже недоступна", show_alert=True)
         await q.answer("Принято")
         try:
             await q.edit_message_reply_markup(None)
@@ -3676,11 +3748,14 @@ async def on_life_btn(update, context):
         miss = job_missing(row, JOBS[key][3])
         if miss:
             return await q.answer("Пока рано: нужно " + ", ".join(miss), show_alert=True)
+        _t = open_task(uid)
+        if _t and _t["expires"] > time.time():
+            return await q.answer("Сначала закончи текущую смену", show_alert=True)
         db.execute("UPDATE users SET job=?, job_shifts=CASE WHEN job=? THEN job_shifts ELSE 0 END "
                    "WHERE user_id=?", (key, key, uid))
         db.commit()
         text = (f"✅ {link(uid, row['name'])} устроился: <b>{JOBS[key][0]}</b>\n"
-                f"Зарплата {JOBS[key][1]} 🪙 за смену. Выходи на смену словом «работать»")
+                f"Зарплата {shown_pay(JOBS[key][1])} 🪙 за смену. Выходи на смену словом «работать»")
         pic, api, gif = "раб:" + key, "thumbsup", JOB_GIF.get(key)
     elif kind == "house":
         if key not in HOUSES:
@@ -3693,7 +3768,7 @@ async def on_life_btn(update, context):
         if (row["coins"] or 0) + refund < price:
             return await q.answer(f"Не хватает монет: нужно {price - refund}, у тебя {row['coins'] or 0}",
                                   show_alert=True)
-        give_coins(uid, refund - price)
+        give_coins(uid, refund - price, commit=False)
         db.execute("UPDATE users SET house=? WHERE user_id=?", (key, uid))
         db.commit()
         text = (f"🏠 {link(uid, row['name'])} купил(а): <b>{name}</b> за {price} 🪙"
@@ -3708,7 +3783,7 @@ async def on_life_btn(update, context):
         name, price, em = PETS[key]
         if (row["coins"] or 0) < price:
             return await q.answer(f"Не хватает монет: нужно {price}, у тебя {row['coins'] or 0}", show_alert=True)
-        give_coins(uid, -price)
+        give_coins(uid, -price, commit=False)
         db.execute("INSERT INTO pets(owner,kind,name,fed_day,bought) VALUES(?,?,?,?,?)",
                    (uid, key, name, today(), time.time()))
         db.commit()
@@ -3979,7 +4054,7 @@ def date_go(uid, place):
     if cost and coins_of(uid) < cost:
         return False, f"Нужно {cost} 🪙, у тебя {coins_of(uid)}"
     if cost:
-        give_coins(uid, -cost)
+        give_coins(uid, -cost, commit=False)
     db.execute("UPDATE pairs SET date_day=?, last_action=?, actions=actions+1 WHERE id=?",
                (today(), time.time(), row["id"]))
     db.commit()
@@ -4028,7 +4103,7 @@ def gift_give(uid, key):
     nm, cost, gain = GIFTS[key]
     if coins_of(uid) < cost:
         return False, f"Нужно {cost} 🪙, у тебя {coins_of(uid)}"
-    give_coins(uid, -cost)
+    give_coins(uid, -cost, commit=False)
     new = spark_add(row["id"], gain, "подарок", uname(uid))
     return True, (f"🎁 {link(uid, uname(uid))} подарил(а) {link(pid, uname(pid))}: {nm}!\n"
                   f"+{gain} 🔥 · всего искр: {new}").replace("(а)", ea(uid))
@@ -4078,19 +4153,21 @@ async def handle_v21(update, context, clean):
     bank = row["bank"] or 0
     if m_in:
         n = int(m_in.group(1))
-        if n <= 0 or coins_of(me.id) < n:
+        cur = db.execute("UPDATE users SET coins=coins-? WHERE user_id=? AND coins>=?", (n, me.id, n))
+        if n <= 0 or cur.rowcount == 0:
+            db.rollback()
             return await reply(update, f"У тебя {coins_of(me.id)} 🪙, этого мало.") or True
-        give_coins(me.id, -n)
         db.execute("UPDATE pairs SET bank=bank+? WHERE id=?", (n, row["id"]))
         db.commit()
         await reply(update, f"🏦 {n} 🪙 положено на семейный счёт. Теперь там {bank + n} 🪙")
     elif m_out:
         n = int(m_out.group(1))
-        if n <= 0 or bank < n:
+        cur = db.execute("UPDATE pairs SET bank=bank-? WHERE id=? AND bank>=?", (n, row["id"], n))
+        if n <= 0 or cur.rowcount == 0:
+            db.rollback()
             return await reply(update, f"На семейном счёте {bank} 🪙, этого мало.") or True
-        db.execute("UPDATE pairs SET bank=bank-? WHERE id=?", (n, row["id"]))
+        give_coins(me.id, n, commit=False)
         db.commit()
-        give_coins(me.id, n)
         await reply(update, f"🏦 Снято {n} 🪙. На семейном счёте осталось {bank - n} 🪙")
     else:
         await reply(update, f"🏦 <b>Семейный счёт</b>: {bank} 🪙\n«в семью 100» положить, «из семьи 100» снять")
@@ -4227,11 +4304,22 @@ def hang_mask(g):
     return " ".join(c if c in g["opened"] else "_" for c in g["word"])
 
 
-async def game_win(update, uid, name, extra=""):
+async def game_end(bot, g):
+    for u in set(g.get("players", set())):
+        try:
+            await played(bot, u)
+        except Exception:
+            log.exception("game played")
+
+
+async def game_win(update, uid, name, extra="", bot=None, g=None):
     db.execute("INSERT INTO game_wins(user_id,wins) VALUES(?,1) ON CONFLICT(user_id) DO UPDATE SET wins=wins+1", (uid,))
     db.commit()
     w = db.execute("SELECT wins FROM game_wins WHERE user_id=?", (uid,)).fetchone()["wins"]
     await reply(update, f"🏆 {link(uid, name)} побеждает! {extra}Побед в играх: {w}")
+    if bot is not None and g is not None:
+        g.setdefault("players", set()).add(uid)
+        await game_end(bot, g)
 
 
 def game_launch(chat_id, uid, kind):
@@ -4301,6 +4389,7 @@ async def games_text(update, context, clean, text):
     g = GAMES.get(chat_id)
     if g and time.time() > g["until"]:
         GAMES.pop(chat_id, None)
+        await game_end(context.bot, g)
         g = None
         await reply(update, "⌛ Время игры вышло, никто не справился.")
     if clean in GAME_LIST_WORDS:
@@ -4324,6 +4413,7 @@ async def games_text(update, context, clean, text):
         if g["starter"] != me.id and rank_of(me) < 1:
             return False
         GAMES.pop(chat_id, None)
+        await game_end(context.bot, g)
         await reply(update, "🛑 Игра остановлена.")
         return True
     if clean in GAME_START:
@@ -4335,29 +4425,31 @@ async def games_text(update, context, clean, text):
     kind = g["kind"]
     if kind == "number" and clean.isdigit() and len(clean) <= 4:
         v = int(clean)
+        g.setdefault("players", set()).add(me.id)
         if v == g["n"]:
             GAMES.pop(chat_id, None)
-            await game_win(update, me.id, disp(me), f"Число {v}! ")
+            await game_win(update, me.id, disp(me), f"Число {v}! ", context.bot, g)
         else:
             await reply(update, "⬆️ Больше" if v < g["n"] else "⬇️ Меньше")
         return True
     if kind in ("scramble", "speed") and clean == g["word"]:
         GAMES.pop(chat_id, None)
-        await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ")
+        await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ", context.bot, g)
         return True
     if kind == "hang":
         if clean == g["word"]:
             GAMES.pop(chat_id, None)
-            await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ")
+            await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ", context.bot, g)
             return True
         if len(clean) == 1 and clean.isalpha():
+            g.setdefault("players", set()).add(me.id)
             if clean in g["opened"] or clean in g["wrong"]:
                 return True
             if clean in g["word"]:
                 g["opened"].add(clean)
                 if all(c in g["opened"] for c in g["word"]):
                     GAMES.pop(chat_id, None)
-                    await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ")
+                    await game_win(update, me.id, disp(me), f"Слово «{g['word']}». ", context.bot, g)
                 else:
                     await reply(update, f"✅ Есть такая буква!\n<code>{hang_mask(g)}</code>")
             else:
@@ -4365,6 +4457,7 @@ async def games_text(update, context, clean, text):
                 left = HANG_MAX - len(g["wrong"])
                 if left <= 0:
                     GAMES.pop(chat_id, None)
+                    await game_end(context.bot, g)
                     await reply(update, f"💀 Виселица победила. Слово было: <b>{g['word']}</b>")
                 else:
                     await reply(update, f"❌ Нет такой буквы. Осталось ошибок: {left}\n"
@@ -4420,7 +4513,7 @@ async def private_menu(update):
 
 
 # ============================ СТАТЬЯ С КОМАНДАМИ В TELEGRAPH ============================
-DOC_VER = "26-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
+DOC_VER = "29-1"          # поменяй, если правишь список ниже: бот сам обновит статью при запуске
 DOC_TITLE = "Команды бота " + CHAT_TAG
 DOC_SECTIONS = [
     ("📊 Активность и профиль", [
@@ -4468,7 +4561,7 @@ DOC_SECTIONS = [
         ("«найти работу»", "вам предлагают работы; лучшие открываются по уровню, времени в чате и числу сообщений"),
         ("«работать»", "выйти на смену: мини-игра (курьер развозит заказы людям из чата, остальные решают задания)"),
         ("«моя работа», «уволиться»", "статус и смена работы"),
-        ("Карьера", "Стажёр → Специалист (10 смен) → Старший (30) → Эксперт (70) → Мастер (150), с наградой за повышение"),
+        ("Карьера", "Стажёр → Специалист (10 смен) → Старший (30) → Эксперт (70) → Мастер (150), с небольшой наградой за повышение"),
     ]),
     ("🪙 Монеты и игры", [
         ("«баланс»", "кошелёк; монеты даются за сообщения (1 за 30) и за работу"),
@@ -4699,6 +4792,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await try_quiz(update, text)
 
+    if chat.id != CHAT_ID:
+        return          # в тестовом чате активность, опыт и монеты не начисляются
+
     if getattr(msg, "forward_origin", None) or getattr(msg, "forward_date", None):
         return
     if not is_meaningful(text):
@@ -4728,7 +4824,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def on_reaction_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rc = update.message_reaction_count
-    if not rc or rc.chat.id not in ALLOWED:
+    if not rc or rc.chat.id != CHAT_ID:
         return
     total = sum(r.total_count for r in rc.reactions)
     db.execute("UPDATE msgs SET reactions=? WHERE message_id=?", (total, rc.message_id))
