@@ -4865,24 +4865,35 @@ async def post_init(app):
     except Exception as e:
         print("Статья в Telegraph не опубликована:", repr(e)[:200])
 
+    # post_init вызывается до Application.start(). Запускаем небольшой
+    # supervisor, который дождётся app.running и только затем включит scheduler.
+    # Это совместимо с python-telegram-bot 22.x: у ApplicationBuilder нет post_start.
+    app.bot_data["scheduler_supervisor"] = asyncio.create_task(
+        _start_scheduler_when_running(app), name="scheduler-supervisor"
+    )
 
-async def post_start(app):
-    # Отдельная задача с явным управлением жизненным циклом.
-    # Она запускается после Application.start() и отменяется в post_stop,
-    # чтобы event loop не закрывался с незавершённой coroutine.
-    task = asyncio.create_task(scheduler(app), name="bot-scheduler")
-    app.bot_data["scheduler_task"] = task
+
+async def _start_scheduler_when_running(app):
+    try:
+        while not app.running:
+            await asyncio.sleep(0.1)
+        task = asyncio.create_task(scheduler(app), name="bot-scheduler")
+        app.bot_data["scheduler_task"] = task
+        await task
+    except asyncio.CancelledError:
+        raise
 
 
 async def post_stop(app):
-    # Корректно останавливаем scheduler до закрытия event loop.
-    task = app.bot_data.pop("scheduler_task", None)
-    if task is not None and not task.done():
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    # Останавливаем и supervisor, и сам scheduler до закрытия event loop.
+    for key in ("scheduler_task", "scheduler_supervisor"):
+        task = app.bot_data.pop(key, None)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 def main():
@@ -4895,7 +4906,7 @@ def main():
         print("Нет токена. Вставь его в TOKEN в bot.py или положи в файл token.txt рядом с ботом.")
         return
     app = (Application.builder().token(token).post_init(post_init)
-           .post_start(post_start).post_stop(post_stop).build())
+           .post_stop(post_stop).build())
     for name, fn in (
         ("start", cmd_start), ("help", cmd_help), ("id", cmd_id), ("me", cmd_me),
         ("top", cmd_top), ("week", cmd_week), ("month", cmd_month),
