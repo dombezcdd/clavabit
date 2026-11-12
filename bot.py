@@ -3916,6 +3916,18 @@ CREATE TABLE IF NOT EXISTS custom_jobs(key TEXT PRIMARY KEY, name TEXT, pay INTE
 CREATE TABLE IF NOT EXISTS admin_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT);
 """)
+
+# Безопасная миграция старой SQLite-базы: CREATE TABLE IF NOT EXISTS
+# не добавляет новые столбцы в уже существующую таблицу.
+_admin_log_cols = {r["name"] for r in db.execute("PRAGMA table_info(admin_log)").fetchall()}
+if "ts" not in _admin_log_cols:
+    db.execute("ALTER TABLE admin_log ADD COLUMN ts REAL NOT NULL DEFAULT 0")
+    # Если старая схема хранила время под другим именем, переносим его.
+    _legacy_time_col = next((c for c in ("created", "timestamp", "time") if c in _admin_log_cols), None)
+    if _legacy_time_col:
+        db.execute(f'UPDATE admin_log SET ts = "{_legacy_time_col}" WHERE ts = 0')
+    db.commit()
+
 try:
     db.execute("ALTER TABLE pairs ADD COLUMN bank INTEGER DEFAULT 0")
 except sqlite3.OperationalError:
@@ -4852,7 +4864,12 @@ async def post_init(app):
         print(f"Статья с командами: {url}")
     except Exception as e:
         print("Статья в Telegraph не опубликована:", repr(e)[:200])
-    app.create_task(scheduler(app))
+
+
+async def post_start(app):
+    # post_start вызывается после Application.start(), поэтому фоновая
+    # задача создаётся уже при запущенном приложении.
+    app.create_task(scheduler(app), name="bot-scheduler")
 
 
 def main():
@@ -4864,7 +4881,8 @@ def main():
     if not token:
         print("Нет токена. Вставь его в TOKEN в bot.py или положи в файл token.txt рядом с ботом.")
         return
-    app = Application.builder().token(token).post_init(post_init).build()
+    app = (Application.builder().token(token).post_init(post_init)
+           .post_start(post_start).build())
     for name, fn in (
         ("start", cmd_start), ("help", cmd_help), ("id", cmd_id), ("me", cmd_me),
         ("top", cmd_top), ("week", cmd_week), ("month", cmd_month),
