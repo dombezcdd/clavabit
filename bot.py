@@ -11,6 +11,7 @@ import logging
 import os
 import random
 import re
+import sqlite3
 import sys
 import time
 from types import SimpleNamespace
@@ -32,11 +33,41 @@ try:
 except Exception:
     pass
 
-# ============================ КОНФИГУРАЦИЯ ============================
-from config import *  # transitional import: keeps legacy handlers working unchanged
-from database.db import db
-# ======================================================================
+# ============================ НАСТРОЙКИ ============================
+BASE = os.path.dirname(os.path.abspath(__file__))
 
+TOKEN = ""                    # вставь токен от @BotFather ИЛИ положи его в файл token.txt рядом с bot.py
+CHAT_ID = -1004318004202          # основной чат
+TEST_CHAT_ID = -1002299660550                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
+OWNER_USERNAME = "bloya"        # владелец (без @)
+OWNER_ID = (os.environ.get("OWNER_ID") or "").strip()   # числовой id владельца (надёжнее имени), можно задать в переменных хостинга
+CHANNEL = "@clubClaveka"
+CHAT_TAG = "@clavekchat"
+
+TZ_HOURS = 7                    # часовой пояс чата (7 = Новосибирск, 3 = Москва/Стамбул)
+MIN_MSGS = 50                   # норма сообщений за день для награды
+MIN_LETTERS = 4                 # минимум букв в сообщении
+SPAM_SEC = 3                    # пауза между засчитанными сообщениями
+MIN_REACTIONS = 3               # минимум реакций для «лучшего сообщения дня»
+QUESTION_TIME = (10, 0)         # вопрос дня
+QUIZ_TIME = (18, 0)             # викторина
+SUMMARY_TIME = (23, 55)         # итоги дня
+QUIZ_MINUTES = 60
+PROMO_MIN_MIN, PROMO_MAX_MIN = 60, 120   # реклама/приглашения: одно сообщение раз в 1-2 часа (случайно)
+QUIET_HOURS = (1, 8)            # ночью (с 1 до 8) реклама и напоминания молчат
+QUEST_XP = 40
+QUEST_ALL_BONUS_XP = 100
+QUIZ_XP = 10
+BANNER = "banner.jpg"           # необязательная картинка для итогов
+RP_DIR = "rp"                   # необязательные картинки/гифки: rp/обнять.jpg, rp/ударить.gif ...
+DB_FILE = "activity.db"
+# ===================================================================
+
+ALLOWED = {CHAT_ID} | ({TEST_CHAT_ID} if TEST_CHAT_ID else set())
+TZ = timezone(timedelta(hours=TZ_HOURS))
+FMT = "%Y-%m-%d"
+NOPREV = LinkPreviewOptions(is_disabled=True)
+HTML = ParseMode.HTML
 
 START_TEXT = (
     f"owner: @{OWNER_USERNAME}\n"
@@ -189,9 +220,81 @@ logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s",
 log = logging.getLogger("bot")
 
 # ============================ БАЗА ДАННЫХ ============================
-# Connection and initial schema are initialized in database/db.py.
-# ======================================================================
-
+DATA_DIR = os.environ.get("DATA_DIR", BASE)   # на хостинге можно указать папку с постоянным диском
+os.makedirs(DATA_DIR, exist_ok=True)
+db = sqlite3.connect(os.path.join(DATA_DIR, DB_FILE), check_same_thread=False)
+db.row_factory = sqlite3.Row
+db.executescript("""
+CREATE TABLE IF NOT EXISTS users(
+  user_id INTEGER PRIMARY KEY, name TEXT, username TEXT DEFAULT '',
+  total INTEGER DEFAULT 0, xp INTEGER DEFAULT 0,
+  streak INTEGER DEFAULT 0, best_streak INTEGER DEFAULT 0, last_day TEXT,
+  first_seen REAL, last_seen REAL,
+  quiz_pts INTEGER DEFAULT 0, game_pts INTEGER DEFAULT 0, quest_pts INTEGER DEFAULT 0,
+  rep INTEGER DEFAULT 0, rep_given INTEGER DEFAULT 0,
+  tag TEXT DEFAULT '', registered INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS daily(
+  day TEXT, user_id INTEGER, cnt INTEGER DEFAULT 0, replies INTEGER DEFAULT 0,
+  plays INTEGER DEFAULT 0, repgiven INTEGER DEFAULT 0,
+  PRIMARY KEY(day, user_id));
+CREATE TABLE IF NOT EXISTS msgs(
+  message_id INTEGER PRIMARY KEY, user_id INTEGER, day TEXT, reactions INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS quest_done(
+  day TEXT, user_id INTEGER, qid TEXT, PRIMARY KEY(day, user_id, qid));
+CREATE TABLE IF NOT EXISTS rep_log(
+  day TEXT, giver INTEGER, target INTEGER, PRIMARY KEY(day, giver, target));
+CREATE TABLE IF NOT EXISTS words(
+  day TEXT, word TEXT, cnt INTEGER DEFAULT 0, PRIMARY KEY(day, word));
+CREATE TABLE IF NOT EXISTS mutes(
+  user_id INTEGER PRIMARY KEY, name TEXT, until REAL, reason TEXT,
+  by_name TEXT, created REAL);
+CREATE TABLE IF NOT EXISTS cmd_access(cmd TEXT PRIMARY KEY, rank INTEGER);
+CREATE TABLE IF NOT EXISTS rp_media(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT, kind TEXT, file_id TEXT,
+  file_unique TEXT, added_by TEXT, created REAL);
+CREATE TABLE IF NOT EXISTS pairs(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, a INTEGER, b INTEGER, love INTEGER DEFAULT 30,
+  since REAL, last_action REAL, gain_day TEXT, gain INTEGER DEFAULT 0, date_day TEXT);
+CREATE TABLE IF NOT EXISTS proposals(
+  to_id INTEGER PRIMARY KEY, from_id INTEGER, created REAL, msg_id INTEGER);
+CREATE TABLE IF NOT EXISTS kids(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, pair_id INTEGER, name TEXT, gender TEXT, born REAL);
+CREATE TABLE IF NOT EXISTS spark_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, pair_id INTEGER, delta INTEGER, reason TEXT, who TEXT,
+  ts REAL, bal INTEGER);
+CREATE TABLE IF NOT EXISTS job_tasks(
+  user_id INTEGER PRIMARY KEY, job TEXT, kind TEXT, answer TEXT, target_id INTEGER,
+  created REAL, expires REAL);
+CREATE TABLE IF NOT EXISTS marry_proposals(
+  to_id INTEGER PRIMARY KEY, from_id INTEGER, created REAL);
+CREATE TABLE IF NOT EXISTS pets(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, owner INTEGER, kind TEXT, name TEXT, fed_day TEXT, bought REAL);
+CREATE TABLE IF NOT EXISTS shop_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT -1,
+  active INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS orders(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, item TEXT, price INTEGER,
+  created REAL, status TEXT);
+CREATE TABLE IF NOT EXISTS reports(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, target_id INTEGER, target_name TEXT, msg_id INTEGER,
+  reporter TEXT, reason TEXT, created REAL, status TEXT);
+""")
+for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEGER DEFAULT 0",
+             "duel_l INTEGER DEFAULT 0", "bonus_day TEXT DEFAULT ''",
+             "job TEXT DEFAULT ''", "job_shifts INTEGER DEFAULT 0", "last_work REAL DEFAULT 0",
+             "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''"):
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN " + _col)
+    except sqlite3.OperationalError:
+        pass
+for _col in ("married_at REAL DEFAULT 0", "anniv_day TEXT DEFAULT ''", "actions INTEGER DEFAULT 0",
+             "offended INTEGER DEFAULT 0"):
+    try:
+        db.execute("ALTER TABLE pairs ADD COLUMN " + _col)
+    except sqlite3.OperationalError:
+        pass
+db.commit()
 
 
 def state_get(k, default=None):
