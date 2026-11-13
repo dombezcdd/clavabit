@@ -2,6 +2,7 @@
 """SQLite connection and initial schema. Existing DB file and tables are preserved."""
 import os
 import sqlite3
+import time
 
 from config import BASE, DB_FILE
 
@@ -83,6 +84,14 @@ db.commit()
 
 
 # ---- таблицы и миграции, добавленные в более поздних версиях ----
+# Старая таблица журнала админов могла иметь другие столбцы (CREATE IF NOT EXISTS её не исправит):
+# переименовываем её в архив и создаём новую с нужной схемой.
+_ADMIN_LOG_COLS = {"id", "ts", "actor", "actor_name", "cmd", "text"}
+_have = {r["name"] for r in db.execute("PRAGMA table_info(admin_log)").fetchall()}
+if _have and not _ADMIN_LOG_COLS <= _have:
+    db.execute(f"ALTER TABLE admin_log RENAME TO admin_log_old_{int(time.time())}")
+    db.commit()
+
 db.executescript("""
 CREATE TABLE IF NOT EXISTS challenge_done(
   chat_id INTEGER, message_id INTEGER, ts REAL, PRIMARY KEY(chat_id, message_id));
@@ -94,15 +103,6 @@ CREATE TABLE IF NOT EXISTS mini_sessions(
 CREATE TABLE IF NOT EXISTS admin_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT);
 """)
-
-# CREATE TABLE IF NOT EXISTS не добавляет новые столбцы в уже существующую таблицу.
-_admin_log_cols = {r["name"] for r in db.execute("PRAGMA table_info(admin_log)").fetchall()}
-if "ts" not in _admin_log_cols:
-    db.execute("ALTER TABLE admin_log ADD COLUMN ts REAL NOT NULL DEFAULT 0")
-    # Если старая схема хранила время под другим именем, переносим его.
-    _legacy_time_col = next((c for c in ("created", "timestamp", "time") if c in _admin_log_cols), None)
-    if _legacy_time_col:
-        db.execute(f'UPDATE admin_log SET ts = "{_legacy_time_col}" WHERE ts = 0')
 
 for _table, _col in (("marry_proposals", "pair_id INTEGER"),
                      ("pairs", "maint_day TEXT"),
