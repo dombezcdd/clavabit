@@ -40,3 +40,8 @@ TZ = timezone(timedelta(hours=TZ_HOURS))
 FMT = "%Y-%m-%d"
 NOPREV = LinkPreviewOptions(is_disabled=True)
 HTML = ParseMode.HTML
+
+# ---- экономика (меняй числа здесь) ----
+MSG_COINS_EVERY = 30       # 1 монета за каждые N сообщений
+SHOP_PRICE_MULT = 3        # множитель цен в магазине подарков (цена из «добавить товар» умножается)
+JOB_PAY_MULT = 0.4         # множитель зарплаты на работах (меньше = монет меньше)

@@ -1,32 +1,35 @@
-# Clavabit — staged modular refactor
+# clavabit
 
-This is **stage 1** of the refactor. It deliberately moves only configuration
-and SQLite initialization out of the legacy bot, leaving handlers and business
-logic intact to minimize behavioral changes.
+Telegram-бот активности для чата @clavekchat (python-telegram-bot ≥ 22, SQLite).
 
-## Structure
+## Запуск
 
-- `main.py` — stable process entry point (`from bot import main`).
-- `bot.py` — existing bot logic, preserved with minimal import changes.
-- `config.py` — project paths and settings.
-- `database/db.py` — SQLite connection, initial tables, and additive column migrations.
-- `handlers/`, `services/` — reserved for the next migration stages.
-- `assets/`, `miniapp/` — reserved; no Mini App behavior is added yet.
+```
+pip install -r requirements.txt
+BOT_TOKEN=... python main.py        # или python bot.py
+```
 
-## Run
+Токен берётся из переменной `BOT_TOKEN` (или `TOKEN`), иначе из файла `token.txt` рядом с ботом.
+Токен и база `*.db` в Git не попадают (`.gitignore`). Папку с базой можно задать переменной `DATA_DIR`.
 
-Install the same dependencies as the existing deployment, then run `python main.py`.
-Set `BOT_TOKEN` (or `TOKEN`) in the environment, or use the existing local
-`token.txt` mechanism. Do not commit tokens or database files.
+## Структура
 
-## Database safety
+| Папка / файл | Что внутри |
+|---|---|
+| `main.py`, `bot.py` | точки входа, обе вызывают `app.main()` |
+| `app.py` | сборка приложения: хендлеры, запуск |
+| `scheduler.py` | планировщик: итоги дня, вопрос и викторина, реклама, ежедневные события |
+| `config.py` | все настройки и числа экономики |
+| `database/` | `db.py` — подключение, таблицы и миграции; `state.py` — хранилище ключ-значение |
+| `content/` | тексты справки, статические данные, статья для Telegraph |
+| `core/` | утилиты, антиспам, ранги и права (`need`), общие помощники хендлеров |
+| `services/` | логика без привязки к Telegram: очки, топы, итоги, викторина, отношения, работа, монеты, картинки, свидетельство, Telegraph |
+| `handlers/` | команды и кнопки по темам: профили, мини-игры, дуэли, NFT, модерация, отношения, работа, брак, дома и питомцы, магазин, жалобы, меню; `router.py` разбирает слова-команды |
 
-The database filename remains `activity.db`. The path remains `DATA_DIR` when
-set, otherwise the project root (`BASE`). No table is renamed or dropped.
-Back up the existing `activity.db` before deploying this refactor.
+Слои зависят только «вниз»: `handlers` → `services` → `core` → `database`/`config`. Циклических импортов нет.
 
-## Important
+## Как добавить команду
 
-This stage is a safe extraction, not the full modularization. The next stages
-will move one subsystem at a time (economy, career, relationships, moderation,
-mini-games), with regression checks after each move.
+1. Напиши функцию в подходящем модуле `handlers/` (права: декоратор `@need("ключ")`).
+2. Зарегистрируй её в `app.py` (слэш-команда) и/или в `USER_ALIASES` / `ADMIN_ALIASES` в `handlers/router.py` (команда словами).
+3. Новую таблицу или столбец добавь в `database/db.py`.

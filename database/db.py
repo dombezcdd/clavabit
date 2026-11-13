@@ -81,3 +81,31 @@ for _col in ("married_at REAL DEFAULT 0", "anniv_day TEXT DEFAULT ''", "actions 
         pass
 db.commit()
 
+
+# ---- таблицы и миграции, добавленные в более поздних версиях ----
+db.executescript("""
+CREATE TABLE IF NOT EXISTS challenge_done(
+  chat_id INTEGER, message_id INTEGER, ts REAL, PRIMARY KEY(chat_id, message_id));
+CREATE TABLE IF NOT EXISTS game_wins(user_id INTEGER PRIMARY KEY, wins INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS custom_jobs(key TEXT PRIMARY KEY, name TEXT, pay INTEGER, cd INTEGER, req TEXT);
+CREATE TABLE IF NOT EXISTS admin_log(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT);
+""")
+
+# CREATE TABLE IF NOT EXISTS не добавляет новые столбцы в уже существующую таблицу.
+_admin_log_cols = {r["name"] for r in db.execute("PRAGMA table_info(admin_log)").fetchall()}
+if "ts" not in _admin_log_cols:
+    db.execute("ALTER TABLE admin_log ADD COLUMN ts REAL NOT NULL DEFAULT 0")
+    # Если старая схема хранила время под другим именем, переносим его.
+    _legacy_time_col = next((c for c in ("created", "timestamp", "time") if c in _admin_log_cols), None)
+    if _legacy_time_col:
+        db.execute(f'UPDATE admin_log SET ts = "{_legacy_time_col}" WHERE ts = 0')
+
+for _table, _col in (("marry_proposals", "pair_id INTEGER"),
+                     ("pairs", "maint_day TEXT"),
+                     ("pairs", "bank INTEGER DEFAULT 0")):
+    try:
+        db.execute(f"ALTER TABLE {_table} ADD COLUMN {_col}")
+    except sqlite3.OperationalError:
+        pass
+db.commit()
