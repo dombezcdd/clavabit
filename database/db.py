@@ -88,6 +88,9 @@ CREATE TABLE IF NOT EXISTS challenge_done(
   chat_id INTEGER, message_id INTEGER, ts REAL, PRIMARY KEY(chat_id, message_id));
 CREATE TABLE IF NOT EXISTS game_wins(user_id INTEGER PRIMARY KEY, wins INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS custom_jobs(key TEXT PRIMARY KEY, name TEXT, pay INTEGER, cd INTEGER, req TEXT);
+CREATE TABLE IF NOT EXISTS mini_sessions(
+  sid TEXT PRIMARY KEY, user_id INTEGER, chat_id INTEGER, reply_to INTEGER, job TEXT,
+  task_created REAL, created REAL, used INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS admin_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT);
 """)

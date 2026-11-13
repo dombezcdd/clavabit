@@ -14,6 +14,7 @@ from handlers.common import life_send, own_kb
 from services.economy import coins_of, give_coins
 from services.jobs import CAREER, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
+from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
 
 
@@ -86,14 +87,20 @@ async def life_work(update, context):
                                         created + TASK_MIN * 60))
     db.execute("UPDATE users SET last_work=? WHERE user_id=?", (time.time(), me.id))
     db.commit()
-    kb = None
+    rows = []
     if kind == "deliver":
-        kb = own_kb([[InlineKeyboardButton("✅ Выполнить", callback_data=f"life:done:{me.id}:{int(created)}")]])
+        rows.append([InlineKeyboardButton("✅ Выполнить", callback_data=f"life:done:{me.id}:{int(created)}")])
+    if mini_enabled():
+        sid = mini_open(me.id, update.effective_chat.id, update.effective_message.message_id, job, created)
+        rows.append([InlineKeyboardButton("🎮 Сыграть в смену (мини-игра)",
+                                          url=mini_link(context.bot.username, sid))])
+        hint += "\n🎮 Или пройди мини-игру смены по кнопке: чем лучше результат, тем выше оплата."
+    kb = own_kb(rows) if rows else None
     await life_send(update, context, f"{link(me.id, disp(me))}, новое задание!\n{text}{hint}", key="раб:" + job,
                     api="thumbsup", gif=JOB_GIF.get(job), kb=kb)
 
 
-async def finish_task(bot, chat_id, uid, reply_to=None):
+async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     t = open_task(uid)
     row = urow(uid)
     if not t or not row:
@@ -113,6 +120,9 @@ async def finish_task(bot, chat_id, uid, reply_to=None):
     elif r > 0.95:
         pay = int(pay * 0.5)
         note = "\n😬 Клиент недоволен, зарплата вдвое меньше"
+    if score is not None:
+        pay = max(1, int(pay * mult))
+        note += f"\n🎮 Мини-игра: {score}/100 · оплата ×{mult:g}"
     shifts = (row["job_shifts"] or 0) + 1
     db.execute("UPDATE users SET job_shifts=? WHERE user_id=?", (shifts, uid))
     db.commit()
