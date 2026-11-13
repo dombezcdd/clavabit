@@ -64,7 +64,7 @@ def quests_for(d):
     return [(t, rng.choice(targets[t])) for t in types]
 
 
-async def check_quests(bot, uid):
+async def check_quests(bot, uid, chat_id=None):
     d = today()
     u = urow(uid)
     if not u:
@@ -90,7 +90,7 @@ async def check_quests(bot, uid):
         out += give_xp(uid, QUEST_ALL_BONUS_XP)
     if out:
         try:
-            await bot.send_message(CHAT_ID, "\n".join(out), parse_mode=HTML,
+            await bot.send_message(chat_id or CHAT_ID, "\n".join(out), parse_mode=HTML,
                                    link_preview_options=NOPREV)
         except Exception:
             log.exception("quest msg")

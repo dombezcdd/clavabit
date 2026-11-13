@@ -35,6 +35,10 @@ RP_DIR = "rp"                   # необязательные картинки/
 DB_FILE = "activity.db"
 # ===================================================================
 
+# True = в тестовом чате тоже считаются сообщения, опыт, квесты (для проверки). В основной чат
+# это не влияет, но данные общие: когда проверишь, поставь False.
+TEST_CHAT_COUNTS = True
+
 ALLOWED = {CHAT_ID} | ({TEST_CHAT_ID} if TEST_CHAT_ID else set())
 TZ = timezone(timedelta(hours=TZ_HOURS))
 FMT = "%Y-%m-%d"

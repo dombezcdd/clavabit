@@ -7,7 +7,7 @@ import time
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from config import ALLOWED, CHAT_ID, SPAM_SEC
+from config import ALLOWED, CHAT_ID, SPAM_SEC, TEST_CHAT_COUNTS, TEST_CHAT_ID
 from content.data import RP
 from core.antispam import is_meaningful, last_texts, last_ts
 from core.helpers import reply, target_user
@@ -168,8 +168,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await try_quiz(update, text)
 
-    if chat.id != CHAT_ID:
-        return          # в тестовом чате активность, опыт и монеты не начисляются
+    if chat.id != CHAT_ID and not (TEST_CHAT_COUNTS and chat.id == TEST_CHAT_ID):
+        return          # в тестовом чате активность не начисляется (см. TEST_CHAT_COUNTS в config.py)
 
     if getattr(msg, "forward_origin", None) or getattr(msg, "forward_date", None):
         return
@@ -195,4 +195,4 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count_words(text)
     if events:
         await reply(update, "\n".join(events))
-    await check_quests(context.bot, user.id)
+    await check_quests(context.bot, user.id, chat.id)
