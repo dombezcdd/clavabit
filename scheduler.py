@@ -12,6 +12,7 @@ from core.utils import esc, now
 from database.db import db
 from database.state import state_del, state_get, state_set
 from handlers.life import life_daily
+from handlers.monopoly import monopoly_tick
 from services.quiz import get_quiz, post_question, post_quiz
 from services.relations import REL_TIME
 from services.summary import send_summary, send_text
@@ -24,6 +25,7 @@ async def tick(app):
     d = n.strftime(FMT)
     db.execute("DELETE FROM mutes WHERE until<?", (time.time(),))
     db.commit()
+    await monopoly_tick(bot)
     for name, (h, m), fn in (
         ("question", QUESTION_TIME, lambda: post_question(bot)),
         ("quiz", QUIZ_TIME, lambda: post_quiz(bot)),

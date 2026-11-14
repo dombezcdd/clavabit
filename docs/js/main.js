@@ -5,7 +5,7 @@ function hub() {
   pill.textContent = ""; pill.style.visibility = "hidden";
   const m = el("div", "menu");
   const add = (ic, title, sub, fn) => { const b = el("button", "card", "<div class='ic'>" + ic + "</div><div><b>" + title + "</b><span>" + sub + "</span></div>"); b.onclick = fn; m.appendChild(b); };
-  add("🎩", "Монополия", "Против 1–3 ботов: покупай, строй, разоряй", () => openGame(startMonopoly));
+  add("🎩", "Монополия", "Против 1–3 ботов. С друзьями в чате: команда /monopoly", () => openGame(startMonopoly));
   add("🔢", "2048", "Двигай плитки и собери 2048", () => openGame(start2048));
   add("💣", "Сапёр", "Найди все мины на поле 9×9", () => openGame(startMines));
   add("🐍", "Змейка", "Свайпы по экрану, не врежься", () => openGame(startSnake));

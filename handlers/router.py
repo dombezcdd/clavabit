@@ -20,6 +20,7 @@ from handlers.duel import cmd_duel
 from handlers.economy import cmd_balance, cmd_bonus, cmd_buy, cmd_coins_give, cmd_duels, cmd_item_add, cmd_item_del, cmd_order_done, cmd_orders, cmd_shop, cmd_topcoins
 from handlers.jobs_admin import cmd_job_add, cmd_job_del, cmd_jobs_list
 from handlers.miniapp import handle_miniapp
+from handlers.monopoly import handle_monopoly_text
 from handlers.life import handle_life
 from handlers.media_admin import cmd_pic_add, cmd_pic_clear, cmd_pic_list
 from handlers.menu import cmd_doc_update, private_menu
@@ -152,6 +153,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await handle_rp(update, context, cmd_low[1:].strip(), dot=True)
     if cmd_low in RP:
         return await handle_rp(update, context, cmd_low)
+
+    if await handle_monopoly_text(update, context, cmd_low):
+        return
 
     if await handle_miniapp(update, context, cmd_low):
         return

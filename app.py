@@ -11,6 +11,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Mess
 from config import BASE, CHAT_ID, OWNER_USERNAME, TEST_CHAT_ID, TOKEN
 from database.state import state_get
 from handlers.miniapp import cmd_play
+from handlers.monopoly import cmd_monopoly, on_mono_btn
 from handlers.basic import cmd_help, cmd_id, cmd_start
 from handlers.chat_admin import on_new_members
 from handlers.dates_gifts import on_date_btn, on_gift_btn
@@ -102,7 +103,7 @@ def main():
     for name, fn in (
         ("start", cmd_start), ("help", cmd_help), ("id", cmd_id), ("me", cmd_me),
         ("top", cmd_top), ("week", cmd_week), ("month", cmd_month),
-        ("quiztop", cmd_quiztop), ("play", cmd_play), ("quests", cmd_quests), ("coin", cmd_coin),
+        ("quiztop", cmd_quiztop), ("play", cmd_play), ("monopoly", cmd_monopoly), ("quests", cmd_quests), ("coin", cmd_coin),
         ("slots", cmd_slots), ("dice", cmd_dice), ("duel", cmd_duel),
         ("admin", cmd_admin), ("mute", cmd_mute), ("unmute", cmd_unmute),
         ("ban", cmd_ban), ("unban", cmd_unban), ("tag", cmd_tag), ("untag", cmd_untag),
@@ -125,6 +126,7 @@ def main():
             message_reaction_types=MessageReactionHandler.MESSAGE_REACTION_COUNT_UPDATED))
     app.add_handler(CallbackQueryHandler(on_report_btn, pattern=r"^rp:"))
     app.add_handler(CallbackQueryHandler(on_life_btn, pattern=r"^life:"))
+    app.add_handler(CallbackQueryHandler(on_mono_btn, pattern=r"^mono:"))
     app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
     app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
     app.add_handler(CallbackQueryHandler(on_game_btn, pattern=r"^game:"))
