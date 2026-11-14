@@ -2,6 +2,7 @@
 """Системные обработчики: реакции и ошибки."""
 
 from telegram import Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from config import CHAT_ID
@@ -19,4 +20,8 @@ async def on_reaction_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def on_error(update, context):
+    if isinstance(context.error, (NetworkError, TimedOut)):
+        # временный обрыв связи хостинга с Telegram: не ошибка кода, трейсбек не нужен
+        log.warning("Сеть: %s: %s", type(context.error).__name__, context.error)
+        return
     log.error("Ошибка: %s", context.error, exc_info=context.error)
