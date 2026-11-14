@@ -84,13 +84,20 @@ db.commit()
 
 
 # ---- таблицы и миграции, добавленные в более поздних версиях ----
-# Старая таблица журнала админов могла иметь другие столбцы (CREATE IF NOT EXISTS её не исправит):
-# переименовываем её в архив и создаём новую с нужной схемой.
-_ADMIN_LOG_COLS = {"id", "ts", "actor", "actor_name", "cmd", "text"}
-_have = {r["name"] for r in db.execute("PRAGMA table_info(admin_log)").fetchall()}
-if _have and not _ADMIN_LOG_COLS <= _have:
-    db.execute(f"ALTER TABLE admin_log RENAME TO admin_log_old_{int(time.time())}")
+ADMIN_LOG_COLS = {"id", "ts", "actor", "actor_name", "cmd", "text"}
+
+
+def ensure_admin_log():
+    """Журнал админов: если таблица осталась со старой схемой, архивируем её и создаём новую."""
+    have = {r["name"] for r in db.execute("PRAGMA table_info(admin_log)").fetchall()}
+    if have and not ADMIN_LOG_COLS <= have:
+        db.execute(f"ALTER TABLE admin_log RENAME TO admin_log_old_{time.time_ns()}")
+    db.execute("CREATE TABLE IF NOT EXISTS admin_log(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, "
+               "actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT)")
     db.commit()
+
+
+ensure_admin_log()
 
 db.executescript("""
 CREATE TABLE IF NOT EXISTS challenge_done(
@@ -100,8 +107,6 @@ CREATE TABLE IF NOT EXISTS custom_jobs(key TEXT PRIMARY KEY, name TEXT, pay INTE
 CREATE TABLE IF NOT EXISTS mini_sessions(
   sid TEXT PRIMARY KEY, user_id INTEGER, chat_id INTEGER, reply_to INTEGER, job TEXT,
   task_created REAL, created REAL, used INTEGER DEFAULT 0);
-CREATE TABLE IF NOT EXISTS admin_log(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, actor INTEGER, actor_name TEXT, cmd TEXT, text TEXT);
 """)
 
 for _table, _col in (("marry_proposals", "pair_id INTEGER"),

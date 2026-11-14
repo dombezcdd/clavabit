@@ -8,7 +8,7 @@ import sys
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
-from config import BASE, CHAT_ID, OWNER_USERNAME, TEST_CHAT_ID, TOKEN
+from config import BASE, BOT_VERSION, CHAT_ID, OWNER_USERNAME, TEST_CHAT_ID, TOKEN
 from database.state import state_get
 from handlers.miniapp import cmd_play
 from handlers.monopoly import cmd_monopoly, on_mono_btn
@@ -43,7 +43,7 @@ except Exception:
 # ============================ ЗАПУСК ============================
 async def post_init(app):
     me = await app.bot.get_me()
-    print(f"Бот @{me.username} запущен")
+    print(f"Бот @{me.username} запущен, версия {BOT_VERSION}")
     print(f"Основной чат: {CHAT_ID}" + (f", тестовый: {TEST_CHAT_ID}" if TEST_CHAT_ID else ""))
     oid = state_get("owner_id")
     print(f"Владелец: @{OWNER_USERNAME}" + (f" (id {oid})" if oid else

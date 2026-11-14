@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """Ранги админов, права на команды, декоратор need, журнал админ-действий."""
 
+import sqlite3
 import time
 
 from core.helpers import group_only, reply_user
 from core.logger import log
 from core.utils import disp, is_owner
-from database.db import db
+from database.db import db, ensure_admin_log
 from database.state import state_get
 
 
@@ -101,8 +102,12 @@ def log_admin(update, key):
         t = reply_user(update)
         if t:
             txt += f"  [→ {disp(t)}]"
-        db.execute("INSERT INTO admin_log(ts,actor,actor_name,cmd,text) VALUES(?,?,?,?,?)",
-                   (time.time(), u.id, disp(u), key, txt))
+        row = (time.time(), u.id, disp(u), key, txt)
+        try:
+            db.execute("INSERT INTO admin_log(ts,actor,actor_name,cmd,text) VALUES(?,?,?,?,?)", row)
+        except sqlite3.OperationalError:     # старая схема таблицы: чиним и пробуем ещё раз
+            ensure_admin_log()
+            db.execute("INSERT INTO admin_log(ts,actor,actor_name,cmd,text) VALUES(?,?,?,?,?)", row)
         db.execute("DELETE FROM admin_log WHERE id < (SELECT MAX(id) FROM admin_log) - 500")
         db.commit()
     except Exception:

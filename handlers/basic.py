@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Команды /start, /help, /id."""
 
-from config import ALLOWED, CHAT_ID
+from config import ALLOWED, BOT_VERSION, CHAT_ID
 from content.texts import HELP_TEXT, START_TEXT
 from core.helpers import reply
 from handlers.menu import menu_kb, send_commands_link
@@ -27,4 +27,4 @@ async def cmd_id(update, context):
     cid = update.effective_chat.id
     ok = "✅ бот тут работает" if cid in ALLOWED else "❌ бот здесь молчит: этот чат не совпадает с CHAT_ID в коде"
     await update.effective_message.reply_text(
-        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: 31")
+        f"ID этого чата: {cid}\n{ok}\nCHAT_ID в коде: {CHAT_ID}\nверсия: {BOT_VERSION}")
