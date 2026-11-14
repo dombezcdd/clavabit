@@ -35,15 +35,16 @@ try:
 except ImportError:  # старая версия библиотеки
     MessageReactionHandler = None
 
-try:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
+for _stream in (sys.stdout, sys.stderr):   # line_buffering: строки сразу попадают в логи хостинга
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    except Exception:
+        pass
 
 # ============================ ЗАПУСК ============================
 async def post_init(app):
     me = await app.bot.get_me()
-    print(f"Бот @{me.username} запущен, версия {BOT_VERSION}")
+    print(f"Бот @{me.username} запущен, версия {BOT_VERSION}", flush=True)
     print(f"Основной чат: {CHAT_ID}" + (f", тестовый: {TEST_CHAT_ID}" if TEST_CHAT_ID else ""))
     oid = state_get("owner_id")
     print(f"Владелец: @{OWNER_USERNAME}" + (f" (id {oid})" if oid else
@@ -90,13 +91,14 @@ async def post_stop(app):
 
 
 def main():
+    print(f"Запуск бота, версия {BOT_VERSION}…", flush=True)
     token = (os.environ.get("BOT_TOKEN") or os.environ.get("TOKEN") or TOKEN).strip()
     if not token:
         p = os.path.join(BASE, "token.txt")
         if os.path.exists(p):
             token = open(p, encoding="utf-8").read().strip()
     if not token:
-        print("Нет токена. Задай переменную окружения BOT_TOKEN или положи токен в файл token.txt рядом с ботом.")
+        print("Нет токена. Задай переменную окружения BOT_TOKEN или положи токен в файл token.txt рядом с ботом.", flush=True)
         return
     app = (Application.builder().token(token).post_init(post_init)
            .post_stop(post_stop).build())
