@@ -5,6 +5,7 @@ import asyncio
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from telegram.error import NetworkError, TimedOut
 
 from config import ALLOWED, HTML, MONO_IDLE_END, MONO_MAX_PLAYERS, MONO_MAX_ROUNDS, MONO_TURN_TIMEOUT
 from core.helpers import group_only, reply
@@ -85,26 +86,40 @@ def _caption(e):
     return "\n".join(lines)[:1000]
 
 
+SLOW = dict(read_timeout=40, write_timeout=40, connect_timeout=20, pool_timeout=20)   # картинки грузятся дольше обычных запросов
+
+
+async def _send_board(bot, chat_id, data, cap, kb):
+    """Отправляет поле. При таймауте повторяет, в крайнем случае шлёт только текст с кнопками, чтобы игра не зависла."""
+    for attempt in range(3):
+        try:
+            return await bot.send_photo(chat_id, data, caption=cap, parse_mode=HTML, reply_markup=kb, **SLOW)
+        except (TimedOut, NetworkError) as ex:
+            log.warning("mono send_photo (%s): %r", attempt + 1, ex)
+            await asyncio.sleep(1.5)
+    return await bot.send_message(chat_id, cap + "\n\n(картинка не загрузилась)", parse_mode=HTML, reply_markup=kb)
+
+
 async def _refresh(bot, chat_id, e, new_msg=None):
     """Обновляет картинку и кнопки. Когда ход переходит к другому игроку, отправляет поле заново (внизу чата, с пингом)."""
     g = e["game"]
     e["log"] = (e["log"] + g.take_events())[-14:]
-    png = await asyncio.to_thread(render, g, e["log"][-9:])   # в потоке, чтобы не тормозить бота
+    data = (await asyncio.to_thread(render, g, e["log"][-9:])).getvalue()   # в потоке, чтобы не тормозить бота
     cap, kb = _caption(e), _game_kb(e)
     cur_id = g.cur().id
     fresh = new_msg if new_msg is not None else (e["last_cur"] != cur_id or g.phase == "over")
     e["last_cur"] = cur_id
     if not fresh and e.get("msg_id"):
         try:
-            await bot.edit_message_media(chat_id, e["msg_id"], InputMediaPhoto(png, caption=cap, parse_mode=HTML), reply_markup=kb)
+            await bot.edit_message_media(chat_id, e["msg_id"], InputMediaPhoto(data, caption=cap, parse_mode=HTML),
+                                         reply_markup=kb, **SLOW)
             return
         except Exception as ex:
             if "not modified" in str(ex).lower():
                 return
-            log.warning("mono edit: %s", ex)
-        png.seek(0)
+            log.warning("mono edit: %r", ex)
     old = e.get("msg_id")
-    m = await bot.send_photo(chat_id, png, caption=cap, parse_mode=HTML, reply_markup=kb)
+    m = await _send_board(bot, chat_id, data, cap, kb)
     e["msg_id"] = m.message_id
     if old:
         try:

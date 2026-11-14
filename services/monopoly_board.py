@@ -171,7 +171,8 @@ def render(g, lines=None):
                 if ly < y1 - 18:
                     d.text((x0 + 34, ly), part, font=f_s, fill="#cfc7ee")
                     ly += 19
-    buf = io.BytesIO()
-    im.save(buf, "PNG", compress_level=3)
+    from PIL import Image
+    buf = io.BytesIO()   # 64 цвета: в ~3 раза меньше файл, быстрее загрузка в Telegram
+    im.quantize(colors=64, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).save(buf, "PNG", optimize=True)
     buf.seek(0)
     return buf
