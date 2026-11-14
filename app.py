@@ -16,6 +16,7 @@ from handlers.basic import cmd_help, cmd_id, cmd_start
 from handlers.chat_admin import on_new_members
 from handlers.dates_gifts import on_date_btn, on_gift_btn
 from handlers.duel import cmd_duel, on_challenge_btn
+from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell, on_market_btn
 from handlers.economy import cmd_balance, cmd_bonus, cmd_buy, cmd_coins_give, cmd_duels, cmd_item_add, cmd_item_del, cmd_order_done, cmd_orders, cmd_shop, cmd_topcoins
 from handlers.life import on_life_btn
 from handlers.minigames import cmd_coin, cmd_dice, cmd_slots, on_game_btn
@@ -116,7 +117,7 @@ def main():
         ("balance", cmd_balance), ("bonus", cmd_bonus), ("shop", cmd_shop), ("buy", cmd_buy),
         ("topcoins", cmd_topcoins), ("duels", cmd_duels), ("report", cmd_report),
         ("additem", cmd_item_add), ("delitem", cmd_item_del), ("givecoins", cmd_coins_give),
-        ("orders", cmd_orders), ("done", cmd_order_done),
+        ("orders", cmd_orders), ("gifts", cmd_gifts), ("market", cmd_market), ("sell", cmd_sell), ("unsell", cmd_unsell), ("done", cmd_order_done),
     ):
         app.add_handler(CommandHandler(name, fn))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
@@ -129,6 +130,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_report_btn, pattern=r"^rp:"))
     app.add_handler(CallbackQueryHandler(on_life_btn, pattern=r"^life:"))
     app.add_handler(CallbackQueryHandler(on_mono_btn, pattern=r"^mono:"))
+    app.add_handler(CallbackQueryHandler(on_market_btn, pattern=r"^mk:"))
     app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
     app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
     app.add_handler(CallbackQueryHandler(on_game_btn, pattern=r"^game:"))

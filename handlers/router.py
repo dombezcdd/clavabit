@@ -17,6 +17,7 @@ from database.db import db
 from handlers.basic import cmd_help
 from handlers.chat_admin import cmd_admin_log, cmd_rules, cmd_set_rules, cmd_set_welcome, cmd_weekstat
 from handlers.duel import cmd_duel
+from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell
 from handlers.economy import cmd_balance, cmd_bonus, cmd_buy, cmd_coins_give, cmd_duels, cmd_item_add, cmd_item_del, cmd_order_done, cmd_orders, cmd_shop, cmd_topcoins
 from handlers.jobs_admin import cmd_job_add, cmd_job_del, cmd_jobs_list
 from handlers.miniapp import handle_miniapp
@@ -49,6 +50,7 @@ USER_ALIASES = {
     "дуэль": cmd_duel, "кости": cmd_dice, "слоты": cmd_slots,
     "монетка": cmd_coin, "монета": cmd_coin,
     "баланс": cmd_balance, "кошелек": cmd_balance, "кошелёк": cmd_balance,
+    "подарки": cmd_gifts, "мои подарки": cmd_gifts, "рынок": cmd_market, "маркет": cmd_market,
     "магазин": cmd_shop, "шоп": cmd_shop, "топ монет": cmd_topcoins,
     "дуэли": cmd_duels, "бонус": cmd_bonus, "правила": cmd_rules, "репорт": cmd_report, "жалоба": cmd_report,
 }
@@ -139,6 +141,13 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if m:
         return await handle_rep(update, context, m)
 
+    ms = re.match(r"(продать|снять(?: с рынка)?)\s+#?(\d+)(?:\s+(\d+))?$", low)
+    if ms:
+        if ms.group(1) == "продать":
+            set_args(context, [ms.group(2), ms.group(3) or ""])
+            return await cmd_sell(update, context)
+        set_args(context, [ms.group(2)])
+        return await cmd_unsell(update, context)
     mb = re.match(r"купить\s+(\d+)$", low)
     if mb:
         set_args(context, [mb.group(1)])

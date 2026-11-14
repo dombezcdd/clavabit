@@ -83,8 +83,25 @@ def shown_pay(base):
 
 def job_pay(row):
     name, base, cd, req = JOBS[row["job"]]
-    mult = 1 + min(row["job_shifts"] or 0, 100) / 200 + house_bonus_pct(row["user_id"]) / 100
+    mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP + house_bonus_pct(row["user_id"]) / 100
     return max(1, int(base * mult * JOB_PAY_MULT))
+
+
+PAY_GROW_CAP = 200     # на стольких сменах зарплата вырастает вдвое (+100%)
+CD_GROW_CAP = 200      # на стольких сменах пауза между сменами вырастает на CD_GROW_HOURS
+CD_GROW_HOURS = 2      # «пара часов»
+XP_PER_SHIFT = 5       # опыта за смену; с ростом стажа больше (+1 за каждые 25 смен)
+
+
+def job_cd_hours(row):
+    """Пауза между сменами в часах: базовая + рост со стажем."""
+    base = JOBS[row["job"]][2]
+    sh = min(row["job_shifts"] or 0, CD_GROW_CAP)
+    return base + CD_GROW_HOURS * sh / CD_GROW_CAP
+
+
+def shift_xp(shifts):
+    return XP_PER_SHIFT + min(shifts, 200) // 25
 
 
 JOB_GIF = {"курьер": "delivery courier", "уборщик": "cleaning mop", "продавец": "cashier store",

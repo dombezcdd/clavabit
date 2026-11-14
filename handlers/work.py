@@ -12,7 +12,8 @@ from core.utils import disp, esc, link, urow
 from database.db import db
 from handlers.common import life_send, own_kb
 from services.economy import coins_of, give_coins
-from services.jobs import CAREER, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
+from services.xp import give_xp
+from services.jobs import CAREER, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
 from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
@@ -52,7 +53,7 @@ async def life_work(update, context):
         return await reply(update, "Ты уже на смене, сначала закончи задание выше ☝️ "
                                    f"(осталось {fmt_minutes((t['expires'] - time.time()) // 60 + 1)})")
     name, base, cd, req = JOBS[row["job"]]
-    left = (row["last_work"] or 0) + cd * 3600 - time.time()
+    left = (row["last_work"] or 0) + job_cd_hours(row) * 3600 - time.time()
     if left > 0:
         return await reply(update, f"Смена ещё не началась. Отдыхай: через {fmt_minutes(left // 60 + 1)} ⏳")
     job = row["job"]
@@ -127,6 +128,10 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     db.execute("UPDATE users SET job_shifts=? WHERE user_id=?", (shifts, uid))
     db.commit()
     give_coins(uid, pay)
+    xp_n = shift_xp(shifts)
+    for _ev in give_xp(uid, xp_n):
+        note += "\n" + _ev
+    note += f"\n⭐ +{xp_n} опыта"
     for _i, (_n, _nm) in enumerate(CAREER):
         if _i and _n == shifts:
             give_coins(uid, 25 * _i)
@@ -192,13 +197,13 @@ async def life_job_my(update, context):
     if row["job"] not in JOBS:
         return await reply(update, "У тебя нет работы. Напиши «найти работу» 💼")
     name, base, cd, req = JOBS[row["job"]]
-    left = (row["last_work"] or 0) + cd * 3600 - time.time()
+    left = (row["last_work"] or 0) + job_cd_hours(row) * 3600 - time.time()
     nxt = "можно выходить на смену прямо сейчас" if left <= 0 else f"следующая смена через {fmt_minutes(left // 60 + 1)}"
     bonus = house_bonus_pct(me.id)
     sh = row["job_shifts"] or 0
     nx = career_next(sh)
     grow = f" (до «{nx[1]}» ещё {nx[0] - sh})" if nx else " (высшая должность)"
     text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} 🪙 (база {shown_pay(base)}, "
-            f"+стаж {min(sh, 100) // 2}%" + (f", +дом {bonus}%" if bonus else "") +
-            f")\nСмен отработано: {sh}{grow}\n{nxt}")
+            f"+стаж {min(sh, PAY_GROW_CAP) * 100 // PAY_GROW_CAP}%" + (f", +дом {bonus}%" if bonus else "") +
+            f")\nСмен отработано: {sh}{grow}\nПауза между сменами: {fmt_minutes(job_cd_hours(row) * 60)} (растёт со стажем)\n{nxt}")
     await life_send(update, context, text, key="проф:" + row["job"])

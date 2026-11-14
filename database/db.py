@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS shop_items(
 CREATE TABLE IF NOT EXISTS orders(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, item TEXT, price INTEGER,
   created REAL, status TEXT);
+CREATE TABLE IF NOT EXISTS market(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, seller INTEGER, seller_name TEXT, item TEXT,
+  price INTEGER, prev_status TEXT, created REAL, status TEXT DEFAULT 'active', buyer INTEGER);
 CREATE TABLE IF NOT EXISTS reports(
   id INTEGER PRIMARY KEY AUTOINCREMENT, target_id INTEGER, target_name TEXT, msg_id INTEGER,
   reporter TEXT, reason TEXT, created REAL, status TEXT);
