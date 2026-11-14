@@ -73,12 +73,18 @@ def _die(draw, x, y, size, v):
         draw.ellipse((px - r, py - r, px + r, py + r), fill="#2a2150")
 
 
-def render(g, lines=None):
-    """Игра -> PNG (BytesIO). lines: последние события для центра поля"""
+_BASE = None
+
+
+def _base():
+    """Статичная часть поля (клетки, названия, цены, рамка центра): рисуется один раз и копируется."""
+    global _BASE
+    if _BASE is not None:
+        return _BASE.copy()
     from PIL import Image, ImageDraw
     im = Image.new("RGB", (S, S), "#17122b")
     d = ImageDraw.Draw(im)
-    f_n, f_p, f_s, f_b = _font(17, True), _font(16), _font(13), _font(30, True)
+    f_n, f_p = _font(17, True), _font(16)
     for i, t in enumerate(TILES):
         r, c = cell_pos(i)
         x0, y0 = M + c * C, M + r * C
@@ -89,12 +95,6 @@ def render(g, lines=None):
             d.rounded_rectangle((x0 + 2, y0 + 2, x0 + C - 2, y0 + 34), 10, fill=col)
             d.rectangle((x0 + 2, y0 + 20, x0 + C - 2, y0 + 34), fill=col)
             top = 36
-            h = g.houses.get(i, 0)
-            if h == 5:
-                d.rectangle((x0 + C // 2 - 14, y0 + 8, x0 + C // 2 + 14, y0 + 26), fill="#e74c3c", outline="#fff")
-            else:
-                for k in range(h):
-                    d.rectangle((x0 + 14 + k * 22, y0 + 8, x0 + 28 + k * 22, y0 + 26), fill="#2ecc71", outline="#0b3d1f")
         label = {"start": "СТАРТ", "chance": "ШАНС ?", "jail": "ТЮРЬМА", "parking": "ОТДЫХ", "gojail": "В ТЮРЬМУ"}.get(t["t"], t["n"])
         if t["t"] == "tax":
             label = f"НАЛОГ ${t['amt']}"
@@ -110,6 +110,29 @@ def render(g, lines=None):
             ty += 20
         if t.get("p"):
             _center(d, (x0 + C // 2, y0 + 72), f"${t['p']}", f_p, "#cfc7ee")
+    x0, y0, x1, y1 = M + C + 6, M + C + 6, M + 7 * C - 6, M + 7 * C - 6
+    d.rounded_rectangle((x0, y0, x1, y1), 18, fill="#211b3d", outline="#463d78", width=2)
+    _center(d, ((x0 + x1) // 2, y0 + 40), "МОНОПОЛИЯ", _font(30, True), "#ffd166")
+    _BASE = im
+    return im.copy()
+
+
+def render(g, lines=None):
+    """Игра -> PNG (BytesIO). lines: последние события для центра поля"""
+    from PIL import ImageDraw
+    im = _base()
+    d = ImageDraw.Draw(im)
+    f_n, f_p, f_s = _font(17, True), _font(16), _font(13)
+    for i, t in enumerate(TILES):
+        r, c = cell_pos(i)
+        x0, y0 = M + c * C, M + r * C
+        if t.get("g"):
+            h = g.houses.get(i, 0)
+            if h == 5:
+                d.rectangle((x0 + C // 2 - 14, y0 + 8, x0 + C // 2 + 14, y0 + 26), fill="#e74c3c", outline="#fff")
+            else:
+                for k in range(h):
+                    d.rectangle((x0 + 14 + k * 22, y0 + 8, x0 + 28 + k * 22, y0 + 26), fill="#2ecc71", outline="#0b3d1f")
         o = g.owner.get(i)
         if o is not None:
             col = SEAT_COLORS[g.seat(g.by_id(o))]
@@ -121,11 +144,8 @@ def render(g, lines=None):
             s = g.seat(p)
             d.ellipse((cx - 11, cy - 11, cx + 11, cy + 11), fill=SEAT_COLORS[s], outline="#ffffff", width=2)
             _center(d, (cx, cy), str(s + 1), _font(14, True), "#000000" if SEAT_COLORS[s] in ("#f1c40f", "#2ecc71") else "#ffffff")
-    # центр
     x0, y0, x1, y1 = M + C + 6, M + C + 6, M + 7 * C - 6, M + 7 * C - 6
-    d.rounded_rectangle((x0, y0, x1, y1), 18, fill="#211b3d", outline="#463d78", width=2)
     cx = (x0 + x1) // 2
-    _center(d, (cx, y0 + 40), "МОНОПОЛИЯ", f_b, "#ffd166")
     _center(d, (cx, y0 + 78), f"круг {min(g.round, g.max_rounds)} из {g.max_rounds}", f_p, "#a79fd0")
     a, b = g.dice
     if a:
@@ -152,6 +172,6 @@ def render(g, lines=None):
                     d.text((x0 + 34, ly), part, font=f_s, fill="#cfc7ee")
                     ly += 19
     buf = io.BytesIO()
-    im.save(buf, "PNG", optimize=True)
+    im.save(buf, "PNG", compress_level=3)
     buf.seek(0)
     return buf

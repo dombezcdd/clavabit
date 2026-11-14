@@ -89,7 +89,7 @@ async def _refresh(bot, chat_id, e, new_msg=None):
     """Обновляет картинку и кнопки. Когда ход переходит к другому игроку, отправляет поле заново (внизу чата, с пингом)."""
     g = e["game"]
     e["log"] = (e["log"] + g.take_events())[-14:]
-    png = render(g, e["log"][-9:])
+    png = await asyncio.to_thread(render, g, e["log"][-9:])   # в потоке, чтобы не тормозить бота
     cap, kb = _caption(e), _game_kb(e)
     cur_id = g.cur().id
     fresh = new_msg if new_msg is not None else (e["last_cur"] != cur_id or g.phase == "over")
