@@ -8,9 +8,10 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import ALLOWED
 from core.helpers import group_only, reply
-from core.utils import disp, esc, link, touch
+from core.utils import disp, esc, link, touch, urow
 from database.db import db
 from services.economy import COIN, coins_of
+from services.finance import gift_left, mark_gift_bought
 
 MARKET_FEE = 5          # комиссия рынка, % (монеты сгорают)
 MAX_PRICE = 1_000_000
@@ -107,6 +108,9 @@ async def on_market_btn(update, context):
         return await q.answer("Лот уже продан или снят", show_alert=True)
     if m["seller"] == me.id:
         return await q.answer("Это твой лот", show_alert=True)
+    gl = gift_left(urow(me.id))
+    if gl > 0:
+        return await q.answer(f"Пауза после покупки подарка ещё {gl // 3600 + 1} ч", show_alert=True)
     if coins_of(me.id) < m["price"]:
         return await q.answer(f"Не хватает славКоинов: нужно {m['price']}", show_alert=True)
     cur = db.execute("UPDATE market SET status='sold', buyer=? WHERE id=? AND status='active'", (me.id, m["id"]))
@@ -118,6 +122,7 @@ async def on_market_btn(update, context):
     db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (gain, m["seller"]))
     db.execute("UPDATE orders SET user_id=?, name=?, status=? WHERE id=?",
                (me.id, disp(me), m["prev_status"], m["order_id"]))
+    mark_gift_bought(me.id)
     db.commit()
     await q.answer("Куплено! 🎉")
     await context.bot.send_message(

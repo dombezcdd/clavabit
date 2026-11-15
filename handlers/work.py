@@ -12,6 +12,7 @@ from core.utils import disp, esc, link, urow
 from database.db import db
 from handlers.common import life_send, own_kb
 from services.clans import PTS_SHIFT, war_add
+from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
 from services.virus import is_sick
 from services.xp import give_xp
@@ -126,6 +127,10 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     if score is not None:
         pay = max(1, int(pay * mult))
         note += f"\n🎮 Мини-игра: {score}/100 · оплата ×{mult:g}"
+    rate = tax_rate(row)
+    tax = int(pay * rate)
+    pay = max(1, pay - tax)
+    note += f"\n🧾 Налог {int(rate * 100)}%: −{tax}" + (" (с НДС после подарка)" if rate > SALARY_TAX else "")
     shifts = (row["job_shifts"] or 0) + 1
     db.execute("UPDATE users SET job_shifts=? WHERE user_id=?", (shifts, uid))
     db.commit()

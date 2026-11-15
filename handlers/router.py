@@ -18,6 +18,7 @@ from handlers.basic import cmd_help
 from handlers.chat_admin import cmd_admin_log, cmd_rules, cmd_set_rules, cmd_set_welcome, cmd_weekstat
 from handlers.duel import cmd_duel
 from handlers.clans import handle_clan_text
+from handlers.finance import handle_finance_text
 from handlers.profile_extra import handle_profile_text
 from handlers.virus import handle_virus_text
 from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell
@@ -170,6 +171,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await handle_profile_text(update, context, cmd_low, text):
+        return
+
+    if await handle_finance_text(update, context, cmd_low, text):
         return
 
     if await handle_clan_text(update, context, cmd_low, text):

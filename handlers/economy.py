@@ -8,6 +8,8 @@ from core.helpers import group_only, reply, resolve_target, target_user
 from core.ranks import need
 from core.utils import disp, esc, link, owner_mention, touch, urow
 from database.db import db
+from core.durations import fmt_minutes
+from services.finance import GIFT_PAUSE_H, GIFT_VAT, gift_left, mark_gift_bought
 from services.economy import COIN, coins_of, give_coins, shop_price
 
 
@@ -85,6 +87,9 @@ async def cmd_buy(update, context):
         return await reply(update, "Нет такого товара. Список: «магазин»")
     if it["stock"] == 0:
         return await reply(update, "Товар закончился 😔")
+    left = gift_left(urow(me.id))
+    if left > 0:
+        return await reply(update, f"🎁 После покупки подарка нужна пауза: следующий можно купить через {fmt_minutes(left // 60 + 1)}")
     bal = coins_of(me.id)
     price = shop_price(it)
     if bal < price:
@@ -94,10 +99,12 @@ async def cmd_buy(update, context):
         db.execute("UPDATE shop_items SET stock=stock-1 WHERE id=?", (it["id"],))
     cur = db.execute("INSERT INTO orders(user_id,name,item,price,created,status) VALUES(?,?,?,?,?, 'new')",
                      (me.id, disp(me), it["name"], price, time.time()))
+    mark_gift_bought(me.id)
     db.commit()
     await reply(update, f"✅ {link(me.id, disp(me))} купил «{esc(it['name'])}» за {price} {COIN}\n"
                         f"Заказ <b>#{cur.lastrowid}</b>. {owner_mention()}, нужно выдать приз 🎁\n"
-                        f"Остаток: {coins_of(me.id)} {COIN}")
+                        f"Остаток: {coins_of(me.id)} {COIN}\n"
+                        f"🧾 Следующий подарок через {GIFT_PAUSE_H} ч, и все эти {GIFT_PAUSE_H} ч зарплата с налогом +{int(GIFT_VAT * 100)}% (НДС)")
 
 
 def _parse_item(args):
