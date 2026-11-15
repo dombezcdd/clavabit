@@ -16,6 +16,8 @@ from handlers.basic import cmd_help, cmd_id, cmd_start
 from handlers.chat_admin import on_new_members
 from handlers.dates_gifts import on_date_btn, on_gift_btn
 from handlers.duel import cmd_duel, on_challenge_btn
+from handlers.clans import on_clan_btn
+from handlers.virus import on_virus_btn
 from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell, on_market_btn
 from handlers.economy import cmd_balance, cmd_bonus, cmd_buy, cmd_coins_give, cmd_duels, cmd_item_add, cmd_item_del, cmd_order_done, cmd_orders, cmd_shop, cmd_topcoins
 from handlers.life import on_life_btn
@@ -131,6 +133,8 @@ def main():
     app.add_handler(CallbackQueryHandler(on_life_btn, pattern=r"^life:"))
     app.add_handler(CallbackQueryHandler(on_mono_btn, pattern=r"^mono:"))
     app.add_handler(CallbackQueryHandler(on_market_btn, pattern=r"^mk:"))
+    app.add_handler(CallbackQueryHandler(on_clan_btn, pattern=r"^cl:"))
+    app.add_handler(CallbackQueryHandler(on_virus_btn, pattern=r"^vir:"))
     app.add_handler(CallbackQueryHandler(on_rel_btn, pattern=r"^rel:"))
     app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
     app.add_handler(CallbackQueryHandler(on_game_btn, pattern=r"^game:"))

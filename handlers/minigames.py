@@ -14,6 +14,7 @@ from core.logger import log
 from core.ranks import rank_of
 from core.utils import disp, link
 from database.db import db
+from services.clans import PTS_WIN, war_add
 from handlers.duel import played, send_challenge
 
 
@@ -98,6 +99,7 @@ async def game_end(bot, g):
 async def game_win(update, uid, name, extra="", bot=None, g=None):
     db.execute("INSERT INTO game_wins(user_id,wins) VALUES(?,1) ON CONFLICT(user_id) DO UPDATE SET wins=wins+1", (uid,))
     db.commit()
+    war_add(uid, PTS_WIN)
     w = db.execute("SELECT wins FROM game_wins WHERE user_id=?", (uid,)).fetchone()["wins"]
     await reply(update, f"🏆 {link(uid, name)} побеждает! {extra}Побед в играх: {w}")
     if bot is not None and g is not None:

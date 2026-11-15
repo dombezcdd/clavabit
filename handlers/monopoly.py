@@ -13,6 +13,7 @@ from core.logger import log
 from core.utils import esc, is_owner, link
 from database.db import db
 from handlers.duel import played
+from services.clans import PTS_WIN, war_add
 from services.monopoly import JAIL_FINE, TILES, Game
 from services.monopoly_board import render
 
@@ -135,6 +136,7 @@ async def _finish(bot, chat_id, e):
     if w and w.human:
         db.execute("INSERT INTO game_wins(user_id,wins) VALUES(?,1) ON CONFLICT(user_id) DO UPDATE SET wins=wins+1", (w.id,))
         db.commit()
+        war_add(w.id, PTS_WIN)
     e["log"].append("Итог: " + ", ".join(f"{p.name} {'банкрот' if p.dead else '$' + str(round(g.worth(p)))}" for p in g.players))
     await _refresh(bot, chat_id, e, new_msg=True)
     MONO_GAMES.pop(chat_id, None)

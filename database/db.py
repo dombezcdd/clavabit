@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS orders(
 CREATE TABLE IF NOT EXISTS market(
   id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, seller INTEGER, seller_name TEXT, item TEXT,
   price INTEGER, prev_status TEXT, created REAL, status TEXT DEFAULT 'active', buyer INTEGER);
+CREATE TABLE IF NOT EXISTS clans(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, owner INTEGER, treasury INTEGER DEFAULT 0,
+  xp INTEGER DEFAULT 0, created REAL);
+CREATE TABLE IF NOT EXISTS wars(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, a INTEGER, b INTEGER, stake INTEGER, chat_id INTEGER,
+  created REAL, start REAL, end REAL, sa INTEGER DEFAULT 0, sb INTEGER DEFAULT 0, status TEXT DEFAULT 'pending');
 CREATE TABLE IF NOT EXISTS reports(
   id INTEGER PRIMARY KEY AUTOINCREMENT, target_id INTEGER, target_name TEXT, msg_id INTEGER,
   reporter TEXT, reason TEXT, created REAL, status TEXT);
@@ -72,7 +78,8 @@ CREATE TABLE IF NOT EXISTS reports(
 for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEGER DEFAULT 0",
              "duel_l INTEGER DEFAULT 0", "bonus_day TEXT DEFAULT ''",
              "job TEXT DEFAULT ''", "job_shifts INTEGER DEFAULT 0", "last_work REAL DEFAULT 0",
-             "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''"):
+             "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''", "clan_id INTEGER DEFAULT 0",
+             "sick_until REAL DEFAULT 0", "immune_until REAL DEFAULT 0", "infect_at REAL DEFAULT 0"):
     try:
         db.execute("ALTER TABLE users ADD COLUMN " + _col)
     except sqlite3.OperationalError:

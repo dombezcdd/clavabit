@@ -11,6 +11,7 @@ from content.data import STOPWORDS, STREAK_MILESTONES
 from core.logger import log
 from core.utils import esc, level_of, link, norm, now, title_of, today, urow
 from database.db import db
+from services.clans import PTS_MSG, war_add
 from services.economy import give_coins
 
 
@@ -119,6 +120,7 @@ def add_counted(uid, message_id, is_reply):
         give_coins(uid, 1)
     if is_reply:
         bump(uid, "replies")
+    war_add(uid, PTS_MSG)
     ev += give_xp(uid, 1)
     return ev
 

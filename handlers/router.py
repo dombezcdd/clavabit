@@ -17,6 +17,8 @@ from database.db import db
 from handlers.basic import cmd_help
 from handlers.chat_admin import cmd_admin_log, cmd_rules, cmd_set_rules, cmd_set_welcome, cmd_weekstat
 from handlers.duel import cmd_duel
+from handlers.clans import handle_clan_text
+from handlers.virus import handle_virus_text
 from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell
 from handlers.economy import cmd_balance, cmd_bonus, cmd_buy, cmd_coins_give, cmd_duels, cmd_item_add, cmd_item_del, cmd_order_done, cmd_orders, cmd_shop, cmd_topcoins
 from handlers.jobs_admin import cmd_job_add, cmd_job_del, cmd_jobs_list
@@ -164,6 +166,12 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await handle_rp(update, context, cmd_low)
 
     if await handle_monopoly_text(update, context, cmd_low):
+        return
+
+    if await handle_clan_text(update, context, cmd_low, text):
+        return
+
+    if await handle_virus_text(update, context, cmd_low, text):
         return
 
     if await handle_miniapp(update, context, cmd_low):

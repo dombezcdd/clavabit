@@ -11,7 +11,9 @@ from core.helpers import reply
 from core.utils import disp, esc, link, urow
 from database.db import db
 from handlers.common import life_send, own_kb
+from services.clans import PTS_SHIFT, war_add
 from services.economy import coins_of, give_coins
+from services.virus import is_sick
 from services.xp import give_xp
 from services.jobs import CAREER, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
@@ -128,6 +130,9 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     db.execute("UPDATE users SET job_shifts=? WHERE user_id=?", (shifts, uid))
     db.commit()
     give_coins(uid, pay)
+    war_add(uid, PTS_SHIFT)
+    if is_sick(row):
+        note += "\n🤒 Болезнь: зарплата вдвое меньше. Лечение: «аптека»"
     xp_n = shift_xp(shifts)
     for _ev in give_xp(uid, xp_n):
         note += "\n" + _ev
