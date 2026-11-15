@@ -16,15 +16,15 @@ async def cmd_balance(update, context):
     u = target_user(update) or update.effective_user
     touch(u)
     r = urow(u.id)
-    await reply(update, f"{COIN} Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b>\n"
-                        f"Монеты дают за сообщения (1 за каждые 30) и за работу («найти работу»).\n"
+    await reply(update, f"💰 Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b> {COIN}\n"
+                        f"славКоины дают за сообщения (1 за каждые 30) и за работу («найти работу»).\n"
                         f"Потратить: «магазин»")
 
 
 @group_only
 async def cmd_bonus(update, context):
-    await reply(update, "🎁 Ежедневного бонуса больше нет. Монеты начисляются за сообщения "
-                        "(1 монета за каждые 30) и за работу: «найти работу».")
+    await reply(update, "🎁 Ежедневного бонуса больше нет. СлавКоины начисляются за сообщения "
+                        "(1 славКоин за каждые 30) и за работу: «найти работу».")
 
 
 @group_only
@@ -32,9 +32,9 @@ async def cmd_topcoins(update, context):
     rows = db.execute("SELECT user_id,name,coins FROM users WHERE coins>0 "
                       "ORDER BY coins DESC LIMIT 10").fetchall()
     if not rows:
-        return await reply(update, "Пока ни у кого нет монет. Пиши в чат и работай: «найти работу» 🪙")
+        return await reply(update, "Пока ни у кого нет славКоинов. Пиши в чат и работай: «найти работу» 💼")
     medals = ["🥇", "🥈", "🥉"]
-    lines = [f"{COIN} <b>Топ по монетам</b>"]
+    lines = [f"{COIN} <b>Топ по славКоинам</b>"]
     for i, r in enumerate(rows):
         lines.append(f"{medals[i] if i < 3 else str(i + 1) + '.'} {link(r['user_id'], r['name'])} — {r['coins']}")
     await reply(update, "\n".join(lines))
@@ -88,7 +88,7 @@ async def cmd_buy(update, context):
     bal = coins_of(me.id)
     price = shop_price(it)
     if bal < price:
-        return await reply(update, f"Не хватает монет: нужно {price}, у тебя {bal} {COIN}")
+        return await reply(update, f"Не хватает славКоинов: нужно {price}, у тебя {bal} {COIN}")
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (price, me.id))
     if it["stock"] > 0:
         db.execute("UPDATE shop_items SET stock=stock-1 WHERE id=?", (it["id"],))

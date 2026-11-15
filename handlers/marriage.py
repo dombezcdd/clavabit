@@ -31,7 +31,7 @@ async def life_marry_propose(update, context):
         return await reply(update, f"Искр пока маловато: {row['love']}/{MARRY_MIN_LOVE}. "
                                    f"Больше внимания: «свидание», «поцеловать», «обнять»")
     if coins_of(me.id) < MARRY_COST:
-        return await reply(update, f"Свадьба стоит {MARRY_COST} 🪙, у тебя {coins_of(me.id)}. "
+        return await reply(update, f"Свадьба стоит {MARRY_COST} славКоин, у тебя {coins_of(me.id)}. "
                                    f"Заработай: «работать» и сообщения в чате")
     db.execute("INSERT OR REPLACE INTO marry_proposals(to_id,from_id,created,pair_id) VALUES(?,?,?,?)",
                (other.id, me.id, time.time(), row["id"]))
@@ -39,7 +39,7 @@ async def life_marry_propose(update, context):
     await life_send(update, context,
                     f"💍 {link(me.id, disp(me))} делает предложение {link(other.id, disp(other))}!\n"
                     f"Ответ в течение суток: «принять брак» или «отказать в браке».\n"
-                    f"Свадьба оплачивается из кошелька жениха/невесты: {MARRY_COST} 🪙",
+                    f"Свадьба оплачивается из кошелька жениха/невесты: {MARRY_COST} славКоин",
                     key="отн:предложение брака", api="handhold")
 
 
@@ -62,7 +62,7 @@ async def life_marry_answer(update, context, accept):
     if int((time.time() - row["since"]) // 86400) < MARRY_MIN_DAYS or row["love"] < MARRY_MIN_LOVE:
         return await reply(update, "Условия свадьбы (срок отношений и искры) сейчас не выполнены.")
     if coins_of(a) < MARRY_COST:
-        return await reply(update, f"У {esc(uname(a))} не хватило монет на свадьбу ({MARRY_COST} 🪙).")
+        return await reply(update, f"У {esc(uname(a))} не хватило славКоинов на свадьбу ({MARRY_COST} славКоин).")
     give_coins(a, -MARRY_COST, commit=False)
     db.execute("UPDATE pairs SET married_at=?, last_action=? WHERE id=?", (time.time(), time.time(), row["id"]))
     db.commit()
@@ -81,12 +81,12 @@ async def life_divorce(update, context):
     if not is_married(row):
         return await reply(update, "Ты не в браке.")
     if coins_of(me.id) < DIVORCE_COST:
-        return await reply(update, f"Развод стоит {DIVORCE_COST} 🪙, а у тебя {coins_of(me.id)}.")
+        return await reply(update, f"Развод стоит {DIVORCE_COST} славКоин, а у тебя {coins_of(me.id)}.")
     p = partner_of(row, me.id)
     give_coins(me.id, -DIVORCE_COST, commit=False)
     delete_pair(row["id"])
     await life_send(update, context,
-                    f"💔 {link(me.id, disp(me))} подал(а) на развод с {link(p, uname(p))} (−{DIVORCE_COST} 🪙).",
+                    f"💔 {link(me.id, disp(me))} подал(а) на развод с {link(p, uname(p))} (−{DIVORCE_COST} славКоин).",
                     key="отн:развод", api="cry")
 
 
@@ -110,7 +110,7 @@ async def life_family(update, context):
         if not r:
             continue
         job = JOBS[r["job"]][0] if r["job"] in JOBS else "без работы"
-        lines.append(f"• {esc(r['name'])}: {job}, {r['coins'] or 0} 🪙")
+        lines.append(f"• {esc(r['name'])}: {job}, {r['coins'] or 0} славКоин")
     hs = {urow(i)["house"] for i in (a, b) if urow(i) and urow(i)["house"] in HOUSES}
     if hs:
         lines.append("🏠 Жильё: " + ", ".join(HOUSES[h][0] for h in hs))

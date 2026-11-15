@@ -79,8 +79,15 @@ def house_bonus_pct(uid):
     return best
 
 
+SHIFT_SCALE = 0.5      # смены короче в 2 раза (пауза меньше), зарплата за смену тоже в 2 раза меньше
+
+
 def shown_pay(base):
-    return max(1, int(base * JOB_PAY_MULT))
+    return max(1, int(base * JOB_PAY_MULT * SHIFT_SCALE))
+
+
+def shown_cd(cd):
+    return cd * SHIFT_SCALE
 
 
 def job_pay(row):
@@ -89,12 +96,12 @@ def job_pay(row):
         + clan_bonus_pct(row["user_id"]) / 100
     if is_sick(row):
         mult *= SICK_PAY_MULT
-    return max(1, int(base * mult * JOB_PAY_MULT))
+    return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE))
 
 
 PAY_GROW_CAP = 200     # на стольких сменах зарплата вырастает вдвое (+100%)
 CD_GROW_CAP = 200      # на стольких сменах пауза между сменами вырастает на CD_GROW_HOURS
-CD_GROW_HOURS = 2      # «пара часов»
+CD_GROW_HOURS = 2      # «пара часов» (до масштаба смены)
 XP_PER_SHIFT = 5       # опыта за смену; с ростом стажа больше (+1 за каждые 25 смен)
 
 
@@ -102,7 +109,7 @@ def job_cd_hours(row):
     """Пауза между сменами в часах: базовая + рост со стажем."""
     base = JOBS[row["job"]][2]
     sh = min(row["job_shifts"] or 0, CD_GROW_CAP)
-    return base + CD_GROW_HOURS * sh / CD_GROW_CAP
+    return (base + CD_GROW_HOURS * sh / CD_GROW_CAP) * SHIFT_SCALE
 
 
 def shift_xp(shifts):

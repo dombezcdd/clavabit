@@ -137,7 +137,7 @@ async def _deposit(update, me, arg):
         return await reply(update, "Напиши: «клан вклад 100»")
     n = int(arg)
     if coins_of(me.id) < n:
-        return await reply(update, f"Не хватает монет, у тебя {coins_of(me.id)} {COIN}")
+        return await reply(update, f"Не хватает славКоинов, у тебя {coins_of(me.id)} {COIN}")
     give_coins(me.id, -n, commit=False)
     db.execute("UPDATE clans SET treasury=treasury+?, xp=xp+? WHERE id=?", (n, n, c["id"]))
     db.commit()

@@ -97,7 +97,7 @@ async def rel_leave_ask(update, context):
     if not row:
         return False
     p = partner_of(row, me.id)
-    cost = f"\nРазвод в браке стоит {DIVORCE_COST} 🪙." if row["married_at"] else ""
+    cost = f"\nРазвод в браке стоит {DIVORCE_COST} славКоин." if row["married_at"] else ""
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("💔 Расторгнуть", callback_data=f"rel:leave:{me.id}"),
                                 InlineKeyboardButton("Отмена", callback_data=f"rel:cancel:{me.id}")]])
     await send_with_pic(context.bot, update.effective_chat.id,
@@ -115,14 +115,14 @@ async def rel_leave_do(bot, chat_id, uid, reply_to=None):
     married = bool(row["married_at"])
     if married:
         if coins_of(uid) < DIVORCE_COST:
-            await send_with_pic(bot, chat_id, f"Развод стоит {DIVORCE_COST} 🪙, а у тебя {coins_of(uid)}.", [],
+            await send_with_pic(bot, chat_id, f"Развод стоит {DIVORCE_COST} славКоин, а у тебя {coins_of(uid)}.", [],
                                 reply_to=reply_to)
             return True
         give_coins(uid, -DIVORCE_COST)
     delete_pair(row["id"])
     await send_with_pic(bot, chat_id,
                         f"💔 {link(p, uname(p))}, к сожалению, {link(uid, uname(uid))} решил{ea(uid)} "
-                        f"расторгнуть ваши отношения" + (f" (−{DIVORCE_COST} 🪙)." if married else "."),
+                        f"расторгнуть ваши отношения" + (f" (−{DIVORCE_COST} славКоин)." if married else "."),
                         ["отн:развод" if married else "отн:расставание"], reply_to=reply_to,
                         api_cat="cry")
     return True
@@ -401,10 +401,10 @@ async def on_rel_btn(update, context):
         await q.answer()
         if what == "buy":
             B = InlineKeyboardButton
-            kb = InlineKeyboardMarkup([[B(f"{c} 🪙 → {c * SPARK_RATE} искр", callback_data=f"rel:buy2:{c}:{uid}")]
+            kb = InlineKeyboardMarkup([[B(f"{c} славКоин → {c * SPARK_RATE} искр", callback_data=f"rel:buy2:{c}:{uid}")]
                                        for c in (50, 200, 500)])
-            return await send_with_pic(bot, chat, f"💰 Купить искры. Курс: 1 🪙 = {SPARK_RATE} искр. "
-                                                  f"У тебя {coins_of(uid)} 🪙", [], reply_to=mid, markup=kb)
+            return await send_with_pic(bot, chat, f"💰 Купить искры. Курс: 1 славКоин = {SPARK_RATE} искр. "
+                                                  f"У тебя {coins_of(uid)} славКоин", [], reply_to=mid, markup=kb)
         if what == "house":
             return await life_houses(shim, context)
         if what == "pets":
@@ -419,13 +419,13 @@ async def on_rel_btn(update, context):
         if c not in (50, 200, 500):
             return await q.answer()
         if coins_of(uid) < c:
-            return await q.answer(f"Не хватает монет: нужно {c}, у тебя {coins_of(uid)}", show_alert=True)
+            return await q.answer(f"Не хватает славКоинов: нужно {c}, у тебя {coins_of(uid)}", show_alert=True)
         give_coins(uid, -c)
         new = spark_add(row["id"], c * SPARK_RATE, "покупка искр", uname(uid))
         await q.answer("Готово")
         await drop_markup()
         return await send_with_pic(bot, chat, f"💰 {link(uid, uname(uid))} купил(а) {c * SPARK_RATE} искр "
-                                              f"за {c} 🪙. Всего искр: {new}", [], reply_to=mid)
+                                              f"за {c} славКоин. Всего искр: {new}", [], reply_to=mid)
     await q.answer()
 
 

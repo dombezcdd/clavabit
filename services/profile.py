@@ -37,8 +37,10 @@ async def build_profile(bot, row):
     st = row["streak"] if row["last_day"] in (d, (now() - timedelta(days=1)).strftime(FMT)) else 0
     ar = rank_of_id(uid)
     adm = f"🛡 {rank_title(ar)} (админ-ранг {ar})\n" if ar else ""
+    extra = "".join(f"{lab}: {esc(row[col])}\n" for lab, col in (("🏷 Звание", "ztitle"), ("📝 Ник", "nick"), ("🏙 Город", "city"))
+                    if row[col])
     return (
-        f"👤 Это пользователь {name}\n{tag}"
+        f"👤 Это пользователь {name}\n{tag}{extra}"
         f"👨🏻‍🔧 {role}\n{adm}\n"
         f"▫️ [{lvl}] Ранг: {esc(title_of(lvl))}{nxt}\n"
         f"🕰 Олдство: {ot} ({days} дн. в чате)\n\n"

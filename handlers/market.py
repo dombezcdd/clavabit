@@ -88,7 +88,7 @@ async def cmd_market(update, context):
     kb = []
     for r in rows:
         lines.append(f"<b>#{r['id']}</b> · {esc(r['item'])} — {r['price']} {COIN} · {link(r['seller'], r['seller_name'])}")
-        kb.append([InlineKeyboardButton(f"Купить #{r['id']} · {r['price']}🪙", callback_data=f"mk:buy:{r['id']}")])
+        kb.append([InlineKeyboardButton(f"Купить #{r['id']} · {r['price']} славКоин", callback_data=f"mk:buy:{r['id']}")])
     lines.append(f"\nТвой баланс: {coins_of(update.effective_user.id)} {COIN}")
     await reply(update, "\n".join(lines), reply_markup=InlineKeyboardMarkup(kb[:10]))
 
@@ -108,7 +108,7 @@ async def on_market_btn(update, context):
     if m["seller"] == me.id:
         return await q.answer("Это твой лот", show_alert=True)
     if coins_of(me.id) < m["price"]:
-        return await q.answer(f"Не хватает монет: нужно {m['price']}", show_alert=True)
+        return await q.answer(f"Не хватает славКоинов: нужно {m['price']}", show_alert=True)
     cur = db.execute("UPDATE market SET status='sold', buyer=? WHERE id=? AND status='active'", (me.id, m["id"]))
     if cur.rowcount == 0:
         db.commit()

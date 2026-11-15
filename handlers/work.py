@@ -15,7 +15,7 @@ from services.clans import PTS_SHIFT, war_add
 from services.economy import coins_of, give_coins
 from services.virus import is_sick
 from services.xp import give_xp
-from services.jobs import CAREER, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
+from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
 from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
@@ -35,12 +35,12 @@ async def life_jobs_find(update, context):
     offers = random.sample(avail, min(3, len(avail)))
     lines.append("<b>Тебе предлагают:</b>")
     for k, name, pay, cd, _ in offers:
-        lines.append(f"• {name}: {shown_pay(pay)} 🪙 за смену, раз в {cd} ч.")
+        lines.append(f"• {name}: {shown_pay(pay)} славКоин за смену, раз в {shown_cd(cd):g} ч.")
     if locked:
         lines.append("\n<b>Пока недоступно:</b>")
         for k, name, pay, cd, miss in locked[:4]:
-            lines.append(f"🔒 {name} ({shown_pay(pay)} 🪙): нужно {', '.join(miss)}")
-    kb = own_kb([[InlineKeyboardButton(f"💼 {name} · {shown_pay(pay)}🪙", callback_data=f"life:job:{me.id}:{k}")]
+            lines.append(f"🔒 {name} ({shown_pay(pay)} славКоин): нужно {', '.join(miss)}")
+    kb = own_kb([[InlineKeyboardButton(f"💼 {name} · {shown_pay(pay)} славКоин", callback_data=f"life:job:{me.id}:{k}")]
                  for k, name, pay, cd, _ in offers])
     await life_send(update, context, "\n".join(lines), kb=kb)
 
@@ -140,7 +140,7 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     for _i, (_n, _nm) in enumerate(CAREER):
         if _i and _n == shifts:
             give_coins(uid, 25 * _i)
-            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{25 * _i} 🪙"
+            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{25 * _i} славКоин"
     spark_note = ""
     pr_ = pair_of(uid)
     if pr_:
@@ -154,7 +154,7 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
             extra = f"\n📬 {link(tr['user_id'], tr['name'])} обслужен(а)"
     await send_with_pic(bot, chat_id,
                         f"💼 {link(uid, row['name'])} выполнил(а) задание: <b>{JOBS[row['job']][0]}</b>{extra}\n"
-                        f"+{pay} 🪙 · баланс {coins_of(uid)} · смен всего {shifts}{spark_note}" + note,
+                        f"+{pay} славКоин · баланс {coins_of(uid)} · смен всего {shifts}{spark_note}" + note,
                         ["раб:" + row["job"]], reply_to=reply_to, api_cat="thumbsup",
                         gif_query=JOB_GIF.get(row["job"]))
 
@@ -208,7 +208,7 @@ async def life_job_my(update, context):
     sh = row["job_shifts"] or 0
     nx = career_next(sh)
     grow = f" (до «{nx[1]}» ещё {nx[0] - sh})" if nx else " (высшая должность)"
-    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} 🪙 (база {shown_pay(base)}, "
+    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} славКоин (база {shown_pay(base)}, "
             f"+стаж {min(sh, PAY_GROW_CAP) * 100 // PAY_GROW_CAP}%" + (f", +дом {bonus}%" if bonus else "") +
             f")\nСмен отработано: {sh}{grow}\nПауза между сменами: {fmt_minutes(job_cd_hours(row) * 60)} (растёт со стажем)\n{nxt}")
     await life_send(update, context, text, key="проф:" + row["job"])

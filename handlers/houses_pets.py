@@ -17,14 +17,14 @@ async def life_houses(update, context):
     me = update.effective_user
     row = urow(me.id)
     cur = row["house"] if row["house"] in HOUSES else None
-    lines = ["🏠 <b>Недвижимость</b>", f"Твой баланс: {row['coins'] or 0} 🪙"]
+    lines = ["🏠 <b>Недвижимость</b>", f"Твой баланс: {row['coins'] or 0} славКоин"]
     if cur:
         lines.append(f"Сейчас у тебя: {HOUSES[cur][0]} (старое жильё продаётся за 50%)")
     lines.append("Жильё даёт прибавку к зарплате и общее для супругов.\n")
     btns = []
     for k, (name, price, bonus, url) in HOUSES.items():
-        lines.append(f"• {name}: {price} 🪙, +{bonus}% к зарплате")
-        r = [InlineKeyboardButton(f"🏠 {name} · {price}🪙", callback_data=f"life:house:{me.id}:{k}")]
+        lines.append(f"• {name}: {price} славКоин, +{bonus}% к зарплате")
+        r = [InlineKeyboardButton(f"🏠 {name} · {price} славКоин", callback_data=f"life:house:{me.id}:{k}")]
         if url:
             r.append(InlineKeyboardButton("👀 Посмотреть", url=url))
         btns.append(r)
@@ -33,13 +33,13 @@ async def life_houses(update, context):
 
 async def life_pet_shop(update, context):
     me = update.effective_user
-    lines = ["🐾 <b>Зоомагазин</b>", f"Баланс: {coins_of(me.id)} 🪙. Питомцев можно держать до {PET_MAX}.",
-             f"Кормить: «покормить питомца» ({PET_FEED_COST} 🪙 в день за каждого). "
+    lines = ["🐾 <b>Зоомагазин</b>", f"Баланс: {coins_of(me.id)} славКоин. Питомцев можно держать до {PET_MAX}.",
+             f"Кормить: «покормить питомца» ({PET_FEED_COST} славКоин в день за каждого). "
              f"Без еды {PET_RUNAWAY_DAYS} дней питомец уходит.\n"]
     btns = []
     for k, (name, price, em) in PETS.items():
-        lines.append(f"{em} {name}: {price} 🪙")
-        btns.append([InlineKeyboardButton(f"{em} {name} · {price}🪙", callback_data=f"life:pet:{me.id}:{k}")])
+        lines.append(f"{em} {name}: {price} славКоин")
+        btns.append([InlineKeyboardButton(f"{em} {name} · {price} славКоин", callback_data=f"life:pet:{me.id}:{k}")])
     await life_send(update, context, "\n".join(lines), kb=own_kb(btns))
 
 
@@ -64,13 +64,13 @@ async def life_pet_feed(update, context):
         return await reply(update, "Все питомцы уже сыты сегодня 😺")
     cost = PET_FEED_COST * len(pets)
     if coins_of(me.id) < cost:
-        return await reply(update, f"Корм стоит {cost} 🪙, а у тебя {coins_of(me.id)}.")
+        return await reply(update, f"Корм стоит {cost} славКоин, а у тебя {coins_of(me.id)}.")
     give_coins(me.id, -cost)
     for p in pets:
         db.execute("UPDATE pets SET fed_day=? WHERE id=?", (today(), p["id"]))
     db.commit()
     await life_send(update, context, f"🍖 {link(me.id, disp(me))} покормил(а) питомцев: "
-                                     + ", ".join(esc(p["name"]) for p in pets) + f" (−{cost} 🪙)",
+                                     + ", ".join(esc(p["name"]) for p in pets) + f" (−{cost} славКоин)",
                     key="пет:кормление", api="feed")
 
 

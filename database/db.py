@@ -79,6 +79,7 @@ for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEG
              "duel_l INTEGER DEFAULT 0", "bonus_day TEXT DEFAULT ''",
              "job TEXT DEFAULT ''", "job_shifts INTEGER DEFAULT 0", "last_work REAL DEFAULT 0",
              "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''", "clan_id INTEGER DEFAULT 0",
+             "ztitle TEXT DEFAULT ''", "nick TEXT DEFAULT ''", "city TEXT DEFAULT ''", "bday TEXT DEFAULT ''",
              "sick_until REAL DEFAULT 0", "immune_until REAL DEFAULT 0", "infect_at REAL DEFAULT 0"):
     try:
         db.execute("ALTER TABLE users ADD COLUMN " + _col)

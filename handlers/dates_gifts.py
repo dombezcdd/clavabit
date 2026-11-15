@@ -23,7 +23,7 @@ DATE_PLACES = {"парк": ("🌳 Парк", 0, 50), "кино": ("🎬 Кино
 def date_kb(uid):
     rows = []
     for k, (nm, cost, gain) in DATE_PLACES.items():
-        rows.append([InlineKeyboardButton(f"{nm} · {cost} 🪙 → +{gain} 🔥" if cost else f"{nm} · бесплатно → +{gain} 🔥",
+        rows.append([InlineKeyboardButton(f"{nm} · {cost} славКоин → +{gain} 🔥" if cost else f"{nm} · бесплатно → +{gain} 🔥",
                                           callback_data=f"date:{uid}:{k}")])
     return InlineKeyboardMarkup(rows)
 
@@ -40,7 +40,7 @@ def date_go(uid, place):
         return False, "Ваша половинка обижена, действия недоступны"
     nm, cost, gain = DATE_PLACES[place]
     if cost and coins_of(uid) < cost:
-        return False, f"Нужно {cost} 🪙, у тебя {coins_of(uid)}"
+        return False, f"Нужно {cost} славКоин, у тебя {coins_of(uid)}"
     if cost:
         give_coins(uid, -cost, commit=False)
     db.execute("UPDATE pairs SET date_day=?, last_action=?, actions=actions+1 WHERE id=?",
@@ -48,7 +48,7 @@ def date_go(uid, place):
     db.commit()
     new = spark_add(row["id"], gain, "свидание", uname(uid))
     return True, (f"🌹 {link(uid, uname(uid))} и {link(pid, uname(pid))} сходили на свидание: <b>{nm}</b>!\n"
-                  f"+{gain} 🔥 · всего искр: {new}" + (f" · потрачено {cost} 🪙" if cost else ""))
+                  f"+{gain} 🔥 · всего искр: {new}" + (f" · потрачено {cost} славКоин" if cost else ""))
 
 
 async def on_date_btn(update, context):
@@ -78,7 +78,7 @@ GIFT_MENU_WORDS = {"подарок партнёру", "подарок партн
 
 
 def gift_kb(uid):
-    return InlineKeyboardMarkup([[InlineKeyboardButton(f"{nm} · {cost} 🪙 → +{gain} 🔥",
+    return InlineKeyboardMarkup([[InlineKeyboardButton(f"{nm} · {cost} славКоин → +{gain} 🔥",
                                                        callback_data=f"gift:{uid}:{k}")]
                                  for k, (nm, cost, gain) in GIFTS.items()])
 
@@ -92,7 +92,7 @@ def gift_give(uid, key):
         return False, "Ваша половинка обижена, действия недоступны"
     nm, cost, gain = GIFTS[key]
     if coins_of(uid) < cost:
-        return False, f"Нужно {cost} 🪙, у тебя {coins_of(uid)}"
+        return False, f"Нужно {cost} славКоин, у тебя {coins_of(uid)}"
     give_coins(uid, -cost, commit=False)
     new = spark_add(row["id"], gain, "подарок", uname(uid))
     return True, (f"🎁 {link(uid, uname(uid))} подарил(а) {link(pid, uname(pid))}: {nm}!\n"
@@ -146,19 +146,19 @@ async def handle_v21(update, context, clean):
         cur = db.execute("UPDATE users SET coins=coins-? WHERE user_id=? AND coins>=?", (n, me.id, n))
         if n <= 0 or cur.rowcount == 0:
             db.rollback()
-            return await reply(update, f"У тебя {coins_of(me.id)} 🪙, этого мало.") or True
+            return await reply(update, f"У тебя {coins_of(me.id)} славКоин, этого мало.") or True
         db.execute("UPDATE pairs SET bank=bank+? WHERE id=?", (n, row["id"]))
         db.commit()
-        await reply(update, f"🏦 {n} 🪙 положено на семейный счёт. Теперь там {bank + n} 🪙")
+        await reply(update, f"🏦 {n} славКоин положено на семейный счёт. Теперь там {bank + n} славКоин")
     elif m_out:
         n = int(m_out.group(1))
         cur = db.execute("UPDATE pairs SET bank=bank-? WHERE id=? AND bank>=?", (n, row["id"], n))
         if n <= 0 or cur.rowcount == 0:
             db.rollback()
-            return await reply(update, f"На семейном счёте {bank} 🪙, этого мало.") or True
+            return await reply(update, f"На семейном счёте {bank} славКоин, этого мало.") or True
         give_coins(me.id, n, commit=False)
         db.commit()
-        await reply(update, f"🏦 Снято {n} 🪙. На семейном счёте осталось {bank - n} 🪙")
+        await reply(update, f"🏦 Снято {n} славКоин. На семейном счёте осталось {bank - n} славКоин")
     else:
-        await reply(update, f"🏦 <b>Семейный счёт</b>: {bank} 🪙\n«в семью 100» положить, «из семьи 100» снять")
+        await reply(update, f"🏦 <b>Семейный счёт</b>: {bank} славКоин\n«в семью 100» положить, «из семьи 100» снять")
     return True

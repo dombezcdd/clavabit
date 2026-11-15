@@ -15,7 +15,7 @@ async def cmd_jobs_list_impl(update):
     lines = ["💼 <b>Список работ</b>"]
     for k, (name, pay, cd, req) in JOBS.items():
         r = ", ".join(f"{lbl} {req[f]}" for f, lbl in (("level", "ур."), ("days", "дн."), ("msgs", "сообщ.")) if f in req)
-        lines.append(f"• <b>{esc(name)}</b> ({esc(k)}): {shown_pay(pay)} 🪙, пауза {cd} ч." + (f" · нужно: {r}" if r else "")
+        lines.append(f"• <b>{esc(name)}</b> ({esc(k)}): {shown_pay(pay)} славКоин, пауза {cd} ч." + (f" · нужно: {r}" if r else "")
                      + ("" if k in BUILTIN_JOBS else " · своя"))
     await reply(update, "\n".join(lines))
 
@@ -29,7 +29,7 @@ async def cmd_jobs_list(update, context):
 async def cmd_job_add(update, context):
     a = list(context.args or [])
     usage = ("Формат: добавить работу Грузчик 45 3 ур=2 дн=1 сообщ=100\n"
-             "(название одним словом, оплата за смену в 🪙, пауза в часах; условия ур=, дн=, сообщ= можно не писать)")
+             "(название одним словом, оплата за смену в славКоин, пауза в часах; условия ур=, дн=, сообщ= можно не писать)")
     if len(a) < 3 or not a[1].isdigit() or not a[2].isdigit():
         return await reply(update, usage)
     key = a[0].lower()[:20]
@@ -37,7 +37,7 @@ async def cmd_job_add(update, context):
         return await reply(update, "Такая работа уже есть в боте, выбери другое название.")
     pay, cd = int(a[1]), int(a[2])
     if not (1 <= pay <= 5000) or not (1 <= cd <= 48):
-        return await reply(update, "Оплата от 1 до 5000 🪙, пауза от 1 до 48 часов.")
+        return await reply(update, "Оплата от 1 до 5000 славКоин, пауза от 1 до 48 часов.")
     req = {}
     for x in a[3:]:
         m = re.fullmatch(r"(ур|дн|сообщ)=(\d{1,6})", x.lower())
@@ -49,7 +49,7 @@ async def cmd_job_add(update, context):
                (key, name, pay, cd, json.dumps(req)))
     db.commit()
     JOBS[key] = (name, pay, cd, req)
-    await reply(update, f"✅ Работа добавлена: <b>{esc(name)}</b>, {pay} 🪙 за смену, пауза {cd} ч. "
+    await reply(update, f"✅ Работа добавлена: <b>{esc(name)}</b>, {pay} славКоин за смену, пауза {cd} ч. "
                         f"Она появится в «найти работу».")
 
 

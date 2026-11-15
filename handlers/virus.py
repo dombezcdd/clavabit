@@ -71,7 +71,7 @@ async def _pharmacy(update, me):
     row = urow(me.id)
     if is_sick(row):
         left = (row["sick_until"] - time.time()) // 60 + 1
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"💊 Купить лекарство · {cure_price(row)}🪙",
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"💊 Купить лекарство · {cure_price(row)} славКоин",
                                                          callback_data=f"vir:cure:{me.id}")]])
         await reply(update, f"🤒 Ты болен(на), осталось {fmt_minutes(left)} · зарплата −{int((1 - SICK_PAY_MULT) * 100)}%.\n"
                             f"Лекарство: {cure_price(row)} {COIN} (чем дольше болезнь, тем дороже), после него "
@@ -91,7 +91,7 @@ async def _cure(update, me):
         return True
     price = cure_price(row)
     if coins_of(me.id) < price:
-        await reply(update, f"Не хватает монет: лекарство {price} {COIN}, у тебя {coins_of(me.id)}")
+        await reply(update, f"Не хватает славКоинов: лекарство {price} {COIN}, у тебя {coins_of(me.id)}")
         return True
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (price, me.id))
     cure(me.id)
@@ -120,7 +120,7 @@ async def on_virus_btn(update, context):
         return await q.answer("Ты уже здоров", show_alert=True)
     price = cure_price(row)
     if coins_of(q.from_user.id) < price:
-        return await q.answer(f"Не хватает монет: нужно {price}", show_alert=True)
+        return await q.answer(f"Не хватает славКоинов: нужно {price}", show_alert=True)
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (price, q.from_user.id))
     cure(q.from_user.id)
     await q.answer("Вылечился! 💊")

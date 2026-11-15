@@ -103,7 +103,7 @@ async def on_life_btn(update, context):
                    "WHERE user_id=?", (key, key, uid))
         db.commit()
         text = (f"✅ {link(uid, row['name'])} устроился: <b>{JOBS[key][0]}</b>\n"
-                f"Зарплата {shown_pay(JOBS[key][1])} 🪙 за смену. Выходи на смену словом «работать»")
+                f"Зарплата {shown_pay(JOBS[key][1])} славКоин за смену. Выходи на смену словом «работать»")
         pic, api, gif = "раб:" + key, "thumbsup", JOB_GIF.get(key)
     elif kind == "house":
         if key not in HOUSES:
@@ -114,12 +114,12 @@ async def on_life_btn(update, context):
             return await q.answer("Этот дом у тебя уже есть", show_alert=True)
         refund = HOUSES[old][1] // 2 if old else 0
         if (row["coins"] or 0) + refund < price:
-            return await q.answer(f"Не хватает монет: нужно {price - refund}, у тебя {row['coins'] or 0}",
+            return await q.answer(f"Не хватает славКоинов: нужно {price - refund}, у тебя {row['coins'] or 0}",
                                   show_alert=True)
         give_coins(uid, refund - price, commit=False)
         db.execute("UPDATE users SET house=? WHERE user_id=?", (key, uid))
         db.commit()
-        text = (f"🏠 {link(uid, row['name'])} купил(а): <b>{name}</b> за {price} 🪙"
+        text = (f"🏠 {link(uid, row['name'])} купил(а): <b>{name}</b> за {price} славКоин"
                 + (f" (старое жильё продано за {refund})" if refund else "")
                 + f"\nБонус к зарплате: +{bonus}%")
         pic, api = "дом:" + key, "happy"
@@ -130,12 +130,12 @@ async def on_life_btn(update, context):
             return await q.answer(f"Больше {PET_MAX} питомцев держать нельзя", show_alert=True)
         name, price, em = PETS[key]
         if (row["coins"] or 0) < price:
-            return await q.answer(f"Не хватает монет: нужно {price}, у тебя {row['coins'] or 0}", show_alert=True)
+            return await q.answer(f"Не хватает славКоинов: нужно {price}, у тебя {row['coins'] or 0}", show_alert=True)
         give_coins(uid, -price, commit=False)
         db.execute("INSERT INTO pets(owner,kind,name,fed_day,bought) VALUES(?,?,?,?,?)",
                    (uid, key, name, today(), time.time()))
         db.commit()
-        text = (f"{em} {link(uid, row['name'])} завёл(а) питомца: <b>{name}</b> за {price} 🪙\n"
+        text = (f"{em} {link(uid, row['name'])} завёл(а) питомца: <b>{name}</b> за {price} славКоин\n"
                 f"Дать имя: «назвать питомца Барсик», кормить: «покормить питомца»")
         pic, api = "пет:" + key, "pat"
     else:
