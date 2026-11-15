@@ -6,7 +6,7 @@ import time
 from core.utils import urow
 from database.db import db
 
-CLAN_CREATE_COST = 1000
+CLAN_CREATE_COST = 50
 CLAN_MAX = 15
 CLAN_NAME_MAX = 16
 LEVEL_STEP = 1000          # вклада в казну на уровень

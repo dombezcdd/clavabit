@@ -63,7 +63,7 @@ async def handle_clan_text(update, context, low, text):
     elif not rest:
         c = clan_of(me.id)
         await reply(update, _clan_text(c) if c else
-                    f"У тебя нет клана. «клан создать Имя» ({CLAN_CREATE_COST} {COIN}) или «клан вступить Имя». "
+                    f"У тебя нет клана. «клан создать Имя» или «клан вступить Имя». "
                     f"Все кланы: «кланы»")
     else:
         sub, _, arg = rest.partition(" ")
