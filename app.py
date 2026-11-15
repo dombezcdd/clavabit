@@ -28,7 +28,7 @@ from handlers.ranks_admin import cmd_access, cmd_admins, cmd_demote, cmd_promote
 from handlers.relations import on_rel_btn
 from handlers.reports import cmd_report, on_report_btn
 from handlers.router import on_text
-from handlers.system import on_error, on_reaction_count
+from handlers.system import on_any_message, on_error, on_reaction_count
 from scheduler import scheduler
 from services.telegraph import telegraph_sync
 
@@ -122,6 +122,7 @@ def main():
         ("orders", cmd_orders), ("gifts", cmd_gifts), ("market", cmd_market), ("sell", cmd_sell), ("unsell", cmd_unsell), ("done", cmd_order_done),
     ):
         app.add_handler(CommandHandler(name, fn))
+    app.add_handler(MessageHandler(filters.ALL & ~filters.StatusUpdate.ALL & filters.UpdateType.MESSAGE, on_any_message), group=-1)
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_members))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.UpdateType.MESSAGE, on_text))

@@ -30,17 +30,17 @@ def mark_gift_bought(uid):
 
 # ---------- бизнес ----------
 BIZ = [   # (название, цена, доход в час)
-    ("Ларёк", 600, 5),
-    ("Магазин", 1800, 15),
-    ("Кафе", 5000, 42),
-    ("Фабрика", 14000, 120),
-    ("Завод", 40000, 350),
+    ("Ларёк", 550, 5),
+    ("Магазин", 1600, 14),
+    ("Кафе", 4200, 36),
+    ("Фабрика", 10000, 80),
+    ("Завод", 24000, 160),
 ]
 BIZ_CAP_H = 24             # доход копится не дольше стольких часов
 BIZ_EVENTS = (             # (шанс, множитель дохода, текст)
     (0.10, 0.8, "🕵 Налоговая проверка: штраф 20% дохода"),
     (0.07, 0.5, "🔧 Поломка оборудования: доход вдвое меньше"),
-    (0.08, 1.3, "🎉 Удачный день: доход +30%"),
+    (0.08, 1.15, "🎉 Удачный день: доход +15%"),
 )
 
 
@@ -68,12 +68,15 @@ def biz_roll_event(income):
 
 
 # ---------- биржа ----------
-STOCKS = [   # (тикер, название, базовая цена, волатильность за тик, чувствительность к активности чата)
-    ("КЛВ", "Клава Банк", 100, 0.035, 0.5),
-    ("МШК", "Мишка Тойс", 60, 0.050, 0.8),
-    ("ВИР", "ВирусФарм", 80, 0.060, 0.0),
-    ("ЧАТ", "ЧатМедиа", 120, 0.045, 1.5),
-    ("ДОМ", "ДомСтрой", 150, 0.030, 0.3),
+STOCKS = [   # (тикер, название, базовая цена, волатильность за тик, чувствительность к активности чата, алиасы)
+    ("SVD", "Svidia", 180, 0.060, 0.5, ("свидиа", "нвидиа")),
+    ("SPL", "Sapple", 150, 0.035, 0.3, ("сэппл", "сапл")),
+    ("SLM", "Slamsung", 90, 0.040, 0.3, ("сламсунг",)),
+    ("SLC", "SlavCoin", 40, 0.075, 1.5, ("славкоин", "славкоины")),
+    ("SLB", "Slavbrries", 25, 0.055, 0.5, ("славберис", "славбриз")),
+    ("SOZ", "SOzon", 70, 0.045, 0.8, ("созон", "озон")),
+    ("STS", "Stesla", 200, 0.065, 0.4, ("стесла", "тесла")),
+    ("SYX", "Syandex", 110, 0.040, 0.6, ("сяндекс", "яндекс")),
 ]
 STOCK_TICK_SEC = 1800
 STOCK_FEE = 0.03           # комиссия при продаже
@@ -84,7 +87,15 @@ HIST_KEEP = 48
 
 
 def init_stocks():
-    for sym, name, base, vol, sens in STOCKS:
+    keep = {x[0] for x in STOCKS}
+    for old in db.execute("SELECT * FROM stocks").fetchall():        # убрали компанию из списка: возвращаем стоимость акций
+        if old["sym"] not in keep:
+            for h in db.execute("SELECT * FROM holdings WHERE sym=?", (old["sym"],)).fetchall():
+                db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (int(old["price"] * h["qty"]), h["user_id"]))
+            db.execute("DELETE FROM holdings WHERE sym=?", (old["sym"],))
+            db.execute("DELETE FROM stock_hist WHERE sym=?", (old["sym"],))
+            db.execute("DELETE FROM stocks WHERE sym=?", (old["sym"],))
+    for sym, name, base, vol, sens, _al in STOCKS:
         if not db.execute("SELECT 1 FROM stocks WHERE sym=?", (sym,)).fetchone():
             db.execute("INSERT INTO stocks(sym,name,price,prev,base,vol,sens,updated) VALUES(?,?,?,?,?,?,?,?)",
                        (sym, name, base, base, base, vol, sens, time.time()))
@@ -96,9 +107,13 @@ def find_stock(q):
     q = (q or "").strip().lower()
     if not q:
         return None
+    al = {x[0]: x[5] for x in STOCKS}
     for s in db.execute("SELECT * FROM stocks").fetchall():
-        if s["sym"].lower() == q or s["name"].lower().startswith(q) or s["name"].lower().replace(" ", "") == q:
+        if s["sym"].lower() == q or s["name"].lower() == q or q in al.get(s["sym"], ()):
             return s
+    pref = [s for s in db.execute("SELECT * FROM stocks").fetchall() if len(q) >= 3 and s["name"].lower().startswith(q)]
+    if len(pref) == 1:
+        return pref[0]
     return None
 
 
@@ -128,12 +143,9 @@ def tick_prices(force=False):
         return []
     state_set("stk_tick", str(time.time()))
     act = _activity_bias()
-    sick = db.execute("SELECT COUNT(*) FROM users WHERE sick_until>?", (time.time(),)).fetchone()[0]
     out = []
     for s in db.execute("SELECT * FROM stocks").fetchall():
         ch = random.gauss(0, s["vol"]) + 0.04 * (s["base"] - s["price"]) / s["base"] + act * 0.02 * s["sens"]
-        if s["sym"] == "ВИР":
-            ch += min(sick, 10) * 0.004
         ch = max(-0.12, min(0.12, ch))
         new = round(min(s["base"] * 3, max(s["base"] * 0.4, s["price"] * (1 + ch))), 2)
         db.execute("UPDATE stocks SET prev=?, price=?, updated=? WHERE sym=?", (s["price"], new, time.time(), s["sym"]))

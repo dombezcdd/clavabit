@@ -173,7 +173,7 @@ def _caption():
     for s in db.execute("SELECT * FROM stocks ORDER BY rowid").fetchall():
         ch = (s["price"] - s["prev"]) / s["prev"] * 100 if s["prev"] else 0
         lines.append(f"{'🟢' if ch >= 0 else '🔴'} <b>{s['sym']}</b> {esc(s['name'])}: {s['price']:.2f} ({ch:+.1f}%)")
-    lines.append(f"\n«купить акции КЛВ 5» · «продать акции КЛВ все» · «портфель»\n"
+    lines.append(f"\n«купить акции SVD 5» · «продать акции SVD все» · «портфель»\n"
                  f"Цены меняются раз в 30 мин. Лимит вложений {STOCK_DAY_LIMIT} {COIN}/сутки, "
                  f"до {STOCK_MAX_QTY} акций одной компании, комиссия {int(STOCK_FEE * 100)}% при продаже")
     return "\n".join(lines)
@@ -229,7 +229,7 @@ async def _portfolio(update, me):
     rows = db.execute("SELECT h.*, s.price, s.name FROM holdings h JOIN stocks s ON s.sym=h.sym WHERE h.user_id=?",
                       (me.id,)).fetchall()
     if not rows:
-        await reply(update, "Портфель пуст. Купить: «купить акции КЛВ 5», список: «биржа»")
+        await reply(update, "Портфель пуст. Купить: «купить акции SVD 5», список: «биржа»")
         return True
     total, lines = 0, ["💼 <b>Портфель</b>"]
     for r in rows:

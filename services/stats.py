@@ -11,7 +11,7 @@ from database.db import db
 # ============================ ТОПЫ ============================
 def top_rows(start, end, limit=10):
     return db.execute(
-        "SELECT d.user_id AS uid, u.name AS name, u.tag AS tag, SUM(d.cnt) AS c "
+        "SELECT d.user_id AS uid, u.name AS name, u.tag AS tag, SUM(MAX(d.cnt, COALESCE(d.msgs_all, 0))) AS c "
         "FROM daily d JOIN users u ON u.user_id=d.user_id "
         "WHERE d.day>=? AND d.day<=? GROUP BY d.user_id HAVING c>0 "
         "ORDER BY c DESC LIMIT ?", (start, end, limit)).fetchall()

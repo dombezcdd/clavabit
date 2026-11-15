@@ -100,6 +100,10 @@ for _col in ("married_at REAL DEFAULT 0", "anniv_day TEXT DEFAULT ''", "actions 
         db.execute("ALTER TABLE pairs ADD COLUMN " + _col)
     except sqlite3.OperationalError:
         pass
+try:
+    db.execute("ALTER TABLE daily ADD COLUMN msgs_all INTEGER DEFAULT 0")   # все сообщения для «топ дня» (как в Ирисе)
+except sqlite3.OperationalError:
+    pass
 db.commit()
 
 
