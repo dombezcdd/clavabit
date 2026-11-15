@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """Общие помощники хендлеров: group_only/owner_only, reply, поиск цели команды."""
 
+import asyncio
 import re
 from types import SimpleNamespace
 
 from telegram import Update
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import ContextTypes
 
 from config import ALLOWED, CHAT_TAG, HTML, NOPREV
@@ -39,8 +41,15 @@ def owner_only(fn):
 
 
 async def reply(update, text, **kw):
-    return await update.effective_message.reply_text(
-        text, parse_mode=HTML, link_preview_options=NOPREV, **kw)
+    """Ответ в чат. При обрыве связи с Telegram пробует ещё раз, чтобы ответ не терялся."""
+    for attempt in range(3):
+        try:
+            return await update.effective_message.reply_text(
+                text, parse_mode=HTML, link_preview_options=NOPREV, **kw)
+        except (TimedOut, NetworkError):
+            if attempt == 2:
+                raise
+            await asyncio.sleep(1.5 * (attempt + 1))
 
 
 def why_no_target(update, usage):

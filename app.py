@@ -104,6 +104,8 @@ def main():
         print("Нет токена. Задай переменную окружения BOT_TOKEN или положи токен в файл token.txt рядом с ботом.", flush=True)
         return
     app = (Application.builder().token(token).post_init(post_init)
+           .connect_timeout(15).read_timeout(20).write_timeout(20).pool_timeout(10)
+           .connection_pool_size(32).get_updates_connect_timeout(15).get_updates_read_timeout(30)
            .post_stop(post_stop).build())
     for name, fn in (
         ("start", cmd_start), ("help", cmd_help), ("id", cmd_id), ("me", cmd_me),
