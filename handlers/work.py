@@ -163,8 +163,10 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
         if tr:
             extra = f"\n📬 {link(tr['user_id'], tr['name'])} обслужен(а)"
     await send_with_pic(bot, chat_id,
-                        f"💼 {link(uid, row['name'])} выполнил(а) задание: <b>{JOBS[row['job']][0]}</b>{extra}\n"
-                        f"+{pay} славКоин · баланс {coins_of(uid)} · смен всего {shifts}{spark_note}" + note,
+                        f"💼 {link(uid, row['name'])} · <b>{JOBS[row['job']][0]}</b>\n✅ Задание выполнено{extra}\n\n"
+                        f"💰 <b>Заработано:</b> +{pay} славКоин\n"
+                        f"👛 <b>Баланс:</b> {coins_of(uid)}\n"
+                        f"📈 <b>Смен всего:</b> {shifts}{spark_note}" + (("\n\n" + note.strip()) if note.strip() else ""),
                         ["раб:" + row["job"]], reply_to=reply_to, api_cat="thumbsup",
                         gif_query=JOB_GIF.get(row["job"]))
 
@@ -213,12 +215,18 @@ async def life_job_my(update, context):
         return await reply(update, "У тебя нет работы. Напиши «найти работу» 💼")
     name, base, cd, req = JOBS[row["job"]]
     left = (row["last_work"] or 0) + job_cd_hours(row) * 3600 - time.time()
-    nxt = "можно выходить на смену прямо сейчас" if left <= 0 else f"следующая смена через {fmt_minutes(left // 60 + 1)}"
+    nxt = "🟢 Можно выходить на смену прямо сейчас" if left <= 0 else f"⏰ Следующая смена через {fmt_minutes(left // 60 + 1)}"
     bonus = house_bonus_pct(me.id)
     sh = row["job_shifts"] or 0
     nx = career_next(sh)
-    grow = f" (до «{nx[1]}» ещё {nx[0] - sh})" if nx else " (высшая должность)"
-    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\nЗарплата за смену: {job_pay(row)} славКоин (база {shown_pay(base)}, "
-            f"+стаж {min(sh, PAY_GROW_CAP) * 100 // PAY_GROW_CAP}%" + (f", +дом {bonus}%" if bonus else "") +
-            f")\nСмен отработано: {sh}{grow}\nПауза между сменами: {fmt_minutes(job_cd_hours(row) * 60)} (растёт со стажем)\n{nxt}")
+    grow = f"до «{nx[1]}» ещё {nx[0] - sh}" if nx else "высшая должность"
+    extra = [f"стаж +{min(sh, PAY_GROW_CAP) * 100 // PAY_GROW_CAP}%"]
+    if bonus:
+        extra.append(f"дом +{bonus}%")
+    text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\n\n"
+            f"💰 <b>Зарплата за смену</b>\n{job_pay(row)} славКоин\n"
+            f"<i>база {shown_pay(base)} · {' · '.join(extra)}</i>\n\n"
+            f"📈 <b>Смен отработано:</b> {sh}\n{grow}\n\n"
+            f"⏳ <b>Пауза между сменами</b>\n{fmt_minutes(job_cd_hours(row) * 60)} <i>(растёт со стажем)</i>\n\n"
+            f"{nxt}")
     await life_send(update, context, text, key="проф:" + row["job"])
