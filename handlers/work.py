@@ -16,7 +16,7 @@ from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
 from services.virus import is_sick
 from services.xp import give_xp
-from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, PLACES_DOC, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
+from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
 from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
@@ -68,7 +68,7 @@ async def life_work(update, context):
         if others:
             kind, target = "deliver", others["user_id"]
             tpl, phrase = DELIVER[job]
-            place = random.choice(PLACES_TAXI if job == "таксист" else PLACES_DOC)
+            place = random.choice({"таксист": PLACES_TAXI, "машинист": PLACES_STATION, "стюардесса": PLACES_SERVICE}.get(job, PLACES_DOC))
             text = tpl.format(n=n, t=tag_user(others), place=place)
             answer = phrase
             hint = (f"\n\nНапиши: «{phrase}» (можно ответом на его сообщение) или нажми кнопку. "
@@ -81,8 +81,9 @@ async def life_work(update, context):
             text = MATH_FLAVOR[job].format(q=q, n=n)
             hint = f"\n\nНапиши ответ числом. Время: {TASK_MIN} мин."
         else:
-            kind, answer = "word", random.choice(WORDS)
+            kind, answer = "word", random.choice(FISH if job == "рыбак" else WORDS)
             text = (f"🧹 <b>Уборка.</b> Наведите порядок: напишите слово «{answer}»" if job == "уборщик"
+                    else f"🎣 <b>Рыбалка #{n}.</b> Запишите улов в журнал: слово «{answer}»" if job == "рыбак"
                     else f"🛠 <b>Рабочее задание.</b> Напишите слово «{answer}»")
             hint = f"\n\nВремя: {TASK_MIN} мин."
     created = time.time()
