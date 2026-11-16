@@ -10,12 +10,22 @@ from services.stats import fmt_top, month_start, top_rows, week_start
 from services.xp import QUEST_TITLES, progress, quests_for
 
 
+async def send_profile(update, context, u):
+    from handlers.finance import _send_photo
+    from services.profile import profile_view
+    touch(u)
+    try:
+        card, cap = await profile_view(context.bot, urow(u.id))
+    except Exception:
+        card, cap = None, await build_profile(context.bot, urow(u.id))
+    if card is None:
+        return await reply(update, cap)
+    await _send_photo(update.effective_message, card, cap)
+
+
 @group_only
 async def cmd_me(update, context):
-    u = target_user(update) or update.effective_user
-    touch(u)
-    text = await build_profile(context.bot, urow(u.id))
-    await reply(update, text)
+    await send_profile(update, context, target_user(update) or update.effective_user)
 
 
 @group_only

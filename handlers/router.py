@@ -211,9 +211,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if cmd_low in ("профиль", "мой профиль"):
-        u = target_user(update) or user
-        touch(u)
-        return await reply(update, await build_profile(context.bot, urow(u.id)))
+        from handlers.profiles import send_profile
+        return await send_profile(update, context, target_user(update) or user)
 
     await try_quiz(update, text)
 

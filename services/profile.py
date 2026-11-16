@@ -100,3 +100,83 @@ async def count_gifts(bot, uid):
     if total > nft + regular:      # список обрезан лимитом, остальное считаем обычными
         regular += total - nft - regular
     return nft, regular
+
+
+def _col(row, name):
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return ""
+
+
+async def profile_view(bot, row):
+    """-> (карточка BytesIO или None, подпись HTML)"""
+    import asyncio
+
+    from services.clans import clan_of
+    from services.economy import coins_of
+    from services.jobs import JOBS, career_title
+    from services.profile_card import profile_card
+    from services.relations import is_married, pair_of, partner_of, uname
+
+    uid = row["user_id"]
+    d = today()
+    wk, mo = week_start(), month_start()
+
+    def s(a, b):
+        r = db.execute("SELECT COALESCE(SUM(cnt),0) c FROM daily WHERE user_id=? AND day>=? AND day<=?", (uid, a, b)).fetchone()
+        return r["c"]
+
+    lvl = level_of(row["xp"])
+    ot, days = old_title(row["first_seen"])
+    st = row["streak"] if row["last_day"] in (d, (now() - timedelta(days=1)).strftime(FMT)) else 0
+    ar = rank_of_id(uid)
+    try:
+        cm = await bot.get_chat_member(CHAT_ID, uid)
+        role = "админ чата" if cm.status in ("administrator", "creator") else "участник"
+    except Exception:
+        role = "участник"
+    if ar:
+        role = f"{rank_title(ar)} (ранг {ar})"
+    pct, left = 1.0, "максимальный уровень"
+    if lvl < 100:
+        a, b = level_need(lvl), level_need(lvl + 1)
+        pct = max(0.0, min(1.0, (row["xp"] - a) / max(1, b - a)))
+        left = f"до {lvl + 1} уровня ещё {b - row['xp']} опыта"
+    name = row["name"] or (("@" + row["username"]) if row["username"] else str(uid))
+    sub = " · ".join(x for x in (("@" + row["username"]) if row["username"] else "", _col(row, "ztitle"), role) if x)
+    job = ""
+    if row["job"] in JOBS:
+        job = f"{JOBS[row['job']][0]}, {career_title(row['job_shifts'] or 0)}"
+    cl = clan_of(uid)
+    pr = pair_of(uid)
+    love = ""
+    if pr and is_married(pr):
+        love = "в браке: " + uname(partner_of(pr, uid))
+    elif pr:
+        love = "пара: " + uname(partner_of(pr, uid))
+    foot = [job, ("клан " + cl["name"]) if cl else "", love]
+    card = None
+    try:
+        av = None
+        try:
+            ph = await asyncio.wait_for(bot.get_user_profile_photos(uid, limit=1), 4)
+            if ph.total_count:
+                f = await asyncio.wait_for(ph.photos[0][0].get_file(), 4)
+                av = bytes(await asyncio.wait_for(f.download_as_bytearray(), 6))
+        except Exception:
+            av = None
+        card = profile_card(dict(uid=uid, name=name, sub=sub or "участник", level=lvl, title=title_of(lvl), xp_pct=pct,
+                                 xp_left=left, tiles=[("славКоин", coins_of(uid)), ("Репутация", row["rep"]),
+                                                      ("Серия дней", st), ("В чате", f"{days} дн.")], foot=foot), av)
+    except Exception:
+        log.exception("profile_card")
+    extra = "".join(f"{lab}: {esc(_col(row, col))}\n" for lab, col in (("📝 Ник", "nick"), ("🏙 Город", "city")) if _col(row, col))
+    tag = f"<b>{esc(row['tag'])}</b>\n" if (row["tag"] or "").strip() else ""
+    cap = (f"👤 <b>{esc(name)}</b>\n{tag}{extra}\n"
+           f"📈 <b>Актив</b>\nсегодня {s(d, d)} · неделя {s(wk, d)} · месяц {s(mo, d)} · всего {row['total']}\n\n"
+           f"🔥 <b>Серия дней</b>\n{st} (рекорд {row['best_streak']})\n\n"
+           f"🕰 <b>Олдство</b>\n{ot}\n\n"
+           f"🎯 <b>Очки</b>\n🧠 {row['quiz_pts']} · 🎮 {row['game_pts']} · 📜 {row['quest_pts']}\n\n"
+           f"<i>Первое появление: {fmt_when(row['first_seen'])}\nПоследний актив: {fmt_when(row['last_seen'])}</i>")
+    return card, cap
