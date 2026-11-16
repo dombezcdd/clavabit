@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Вирус: «заразить», «аптека», «лечиться», «больные»."""
 
+import asyncio
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -10,8 +11,10 @@ from core.helpers import reply, resolve_target, target_user
 from core.utils import disp, esc, link, touch, urow
 from core.durations import fmt_minutes
 from database.db import db
+from handlers.finance import _send_photo
+from services.charts import cure_card, infect_card
 from services.economy import COIN, coins_of
-from services.virus import (IMMUNE_HOURS, INFECT_CHANCE, SICK_HOURS, SICK_PAY_MULT, cure, cure_price, is_immune,
+from services.virus import (BOOST_MIN, BOOST_PCT, IMMUNE_HOURS, INFECT_CHANCE, SICK_HOURS, SICK_PAY_MULT, cure, cure_price, is_immune,
                             is_sick, try_infect)
 
 VIRUS_WORDS = {"заразить", "заразить его", "заразить её", "инфицировать"}
@@ -62,7 +65,11 @@ async def _infect(update, context, text):
         "ok": f"🦠 {link(me.id, disp(me))} заразил(а) {who}! Болезнь {SICK_HOURS} ч: зарплата −{int((1 - SICK_PAY_MULT) * 100)}%. "
               f"Лечение: «аптека»",
     }[code]
-    await reply(update, msg)
+    if code == "ok":
+        data = await asyncio.to_thread(lambda: infect_card("ЗАРАЖЕНИЕ", f"Болезнь {SICK_HOURS} ч"))
+        await _send_photo(update.effective_message, data, msg)
+    else:
+        await reply(update, msg)
     return True
 
 
@@ -95,7 +102,10 @@ async def _cure(update, me):
         return True
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (price, me.id))
     cure(me.id)
-    await reply(update, f"💊 {link(me.id, disp(me))} вылечился(ась) за {price} {COIN}. Иммунитет {IMMUNE_HOURS} ч")
+    data = await asyncio.to_thread(cure_card)
+    await _send_photo(update.effective_message, data,
+                      f"💊 {link(me.id, disp(me))} вылечился(ась) за {price} {COIN}. Иммунитет {IMMUNE_HOURS} ч "
+                      f"и +{BOOST_PCT}% к доходу на {BOOST_MIN} мин")
     return True
 
 
@@ -124,6 +134,7 @@ async def on_virus_btn(update, context):
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (price, q.from_user.id))
     cure(q.from_user.id)
     await q.answer("Вылечился! 💊")
-    await context.bot.send_message(q.message.chat_id,
-                                   f"💊 {link(q.from_user.id, disp(q.from_user))} вылечился(ась) за {price} {COIN}. "
-                                   f"Иммунитет {IMMUNE_HOURS} ч", parse_mode="HTML")
+    data = await asyncio.to_thread(cure_card)
+    await _send_photo((context.bot, q.message.chat_id), data,
+                      f"💊 {link(q.from_user.id, disp(q.from_user))} вылечился(ась) за {price} {COIN}. "
+                      f"Иммунитет {IMMUNE_HOURS} ч и +{BOOST_PCT}% к доходу на {BOOST_MIN} мин")

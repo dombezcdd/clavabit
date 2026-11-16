@@ -12,13 +12,19 @@ SICK_HOURS = 12
 IMMUNE_HOURS = 6           # иммунитет после лечения
 INFECT_CD = 3600           # пауза между попытками заразить, сек
 INFECT_CHANCE = 0.55
-SICK_PAY_MULT = 0.5
-CURE_PER_HOUR = 25
-CURE_MIN = 40
+SICK_PAY_MULT = 0.75      # болезнь забирает 25% зарплаты
+CURE_PER_HOUR = 10
+CURE_MIN = 20
+BOOST_MIN = 10            # после лечения +5% к доходу на 10 минут
+BOOST_PCT = 5
 
 
 def is_sick(row):
     return bool(row) and (row["sick_until"] or 0) > time.time()
+
+
+def has_boost(row):
+    return bool(row) and (row["boost_until"] or 0) > time.time()
 
 
 def is_immune(row):
@@ -55,6 +61,6 @@ def try_infect(me_id, target_id):
 
 
 def cure(uid):
-    db.execute("UPDATE users SET sick_until=0, immune_until=? WHERE user_id=?",
-               (time.time() + IMMUNE_HOURS * 3600, uid))
+    db.execute("UPDATE users SET sick_until=0, immune_until=?, boost_until=? WHERE user_id=?",
+               (time.time() + IMMUNE_HOURS * 3600, time.time() + BOOST_MIN * 60, uid))
     db.commit()

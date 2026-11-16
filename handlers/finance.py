@@ -5,18 +5,23 @@ import asyncio
 import re
 import time
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest
+
 from config import ALLOWED, CHAT_ID, HTML, QUIET_HOURS
 from core.durations import fmt_minutes
 from core.logger import log
 from core.helpers import reply
 from core.utils import disp, esc, link, now, touch, urow
 from database.db import db
+from database.state import state_get
 from handlers.monopoly import SLOW
 from services.charts import alert, overview
+from services.virus import BOOST_PCT, has_boost
 from services.economy import COIN, coins_of, give_coins
 from services.finance import (BIZ, BIZ_CAP_H, STOCK_ALERT, STOCK_DAY_LIMIT, STOCK_FEE, STOCK_MAX_QTY, biz_accrued,
                               biz_of, biz_roll_event, biz_upgrade_cost, buy_stock, find_stock, history, holding,
-                              init_stocks, sell_stock, spent_today, tick_prices)
+                              init_stocks, sell_stock, spent_today, tick_prices, STOCK_TICK_SEC)
 
 BUY_RE = re.compile(r"^купить акци[июя]\s+(\S+)(?:\s+(\d+))?$")
 SELL_RE = re.compile(r"^продать акци[июя]\s+(\S+)(?:\s+(\d+|все|всё))?$")
@@ -123,6 +128,9 @@ async def _biz_collect(update, me):
         await reply(update, "Пока нечего собирать, загляни позже ⏳")
         return True
     income, ev = biz_roll_event(acc)
+    if has_boost(urow(me.id)):
+        income = int(income * (1 + BOOST_PCT / 100))
+        ev += ("\n" if ev else "") + f"💊 Бонус после лечения: +{BOOST_PCT}%"
     give_coins(me.id, income, commit=False)
     db.execute("UPDATE business SET last_collect=? WHERE user_id=?", (time.time(), me.id))
     db.commit()
@@ -151,20 +159,20 @@ def _rows():
             db.execute("SELECT * FROM stocks ORDER BY rowid").fetchall()]
 
 
-async def _send_photo(target, data, caption, **kw):
+async def _send_photo(target, data, caption, reply_markup=None, **kw):
     """target: сообщение (reply_photo) или (bot, chat_id)."""
     for attempt in range(3):
         try:
             if isinstance(target, tuple):
-                return await target[0].send_photo(target[1], data, caption=caption, parse_mode=HTML, **SLOW)
-            return await target.reply_photo(data, caption=caption, parse_mode=HTML, **SLOW)
+                return await target[0].send_photo(target[1], data, caption=caption, parse_mode=HTML, reply_markup=reply_markup, **SLOW)
+            return await target.reply_photo(data, caption=caption, parse_mode=HTML, reply_markup=reply_markup, **SLOW)
         except Exception as ex:
             log.warning("биржа send_photo (%s): %r", attempt + 1, ex)
             data.seek(0)
             await asyncio.sleep(1.5)
     if isinstance(target, tuple):
-        return await target[0].send_message(target[1], caption, parse_mode=HTML)
-    return await target.reply_text(caption, parse_mode=HTML)
+        return await target[0].send_message(target[1], caption, parse_mode=HTML, reply_markup=reply_markup)
+    return await target.reply_text(caption, parse_mode=HTML, reply_markup=reply_markup)
 
 
 def _caption():
@@ -174,17 +182,113 @@ def _caption():
         ch = (s["price"] - s["prev"]) / s["prev"] * 100 if s["prev"] else 0
         lines.append(f"{'🟢' if ch >= 0 else '🔴'} <b>{s['sym']}</b> {esc(s['name'])}: {s['price']:.2f} ({ch:+.1f}%)")
     lines.append(f"\n«купить акции SVD 5» · «продать акции SVD все» · «портфель»\n"
-                 f"Цены меняются раз в 30 мин. Лимит вложений {STOCK_DAY_LIMIT} {COIN}/сутки, "
+                 f"Цены меняются раз в 45 мин (следующее обновление через ~{_next_update()} мин). Лимит вложений {STOCK_DAY_LIMIT} {COIN}/сутки, "
                  f"до {STOCK_MAX_QTY} акций одной компании, комиссия {int(STOCK_FEE * 100)}% при продаже")
     return "\n".join(lines)
+
+
+def _list_kb():
+    syms = [s["sym"] for s in db.execute("SELECT sym FROM stocks ORDER BY rowid").fetchall()]
+    rows = [[InlineKeyboardButton(x, callback_data=f"stk:o:{x}") for x in syms[i:i + 4]] for i in range(0, len(syms), 4)]
+    rows.append([InlineKeyboardButton("💼 Портфель", callback_data="stk:p"),
+                 InlineKeyboardButton("🏆 Топ инвесторов", callback_data="stk:t")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _card(uid, s):
+    h = holding(uid, s["sym"])
+    ch = (s["price"] - s["prev"]) / s["prev"] * 100 if s["prev"] else 0
+    hist = history(s["sym"])
+    lines = [f"{'🟢' if ch >= 0 else '🔴'} <b>{s['sym']}</b> · {esc(s['name'])}",
+             f"Цена: <b>{s['price']:.2f}</b> {COIN} ({ch:+.1f}%) · за сутки: {min(hist):.2f}…{max(hist):.2f}",
+             f"У тебя: {h['qty'] if h else 0} шт. · баланс {coins_of(uid)} {COIN}",
+             f"Лимит вложений сегодня: {spent_today(uid)}/{STOCK_DAY_LIMIT} · комиссия продажи {int(STOCK_FEE * 100)}%"]
+    if h:
+        lines.append(f"Вложено {h['cost']}, сейчас {int(s['price'] * h['qty'])}")
+    return "\n".join(lines)
+
+
+def _card_kb(sym):
+    B = InlineKeyboardButton
+    return InlineKeyboardMarkup([
+        [B(f"📥 Купить {n}", callback_data=f"stk:b:{sym}:{n}") for n in (1, 5, 10)],
+        [B("📤 Продать 1", callback_data=f"stk:s:{sym}:1"), B("📤 Продать 5", callback_data=f"stk:s:{sym}:5"),
+         B("📤 Всё", callback_data=f"stk:s:{sym}:0")],
+        [B("🔄 Обновить", callback_data=f"stk:o:{sym}"), B("◀ Все акции", callback_data="stk:m")]])
+
+
+def _next_update():
+    last = float(state_get("stk_tick") or 0)
+    left = max(0, int(last + STOCK_TICK_SEC - time.time()) // 60)
+    return left
 
 
 async def _market(update, context):
     touch(update.effective_user)
     init_stocks()
     data = await asyncio.to_thread(lambda: overview(_rows()))
-    await _send_photo(update.effective_message, data, _caption())
+    await _send_photo(update.effective_message, data, _caption(), reply_markup=_list_kb())
     return True
+
+
+async def on_stock_btn(update, context):
+    q = update.callback_query
+    if not q.message or q.message.chat_id not in ALLOWED:
+        return await q.answer()
+    me = q.from_user
+    touch(me)
+    init_stocks()
+    p = (q.data or "").split(":")
+    act = p[1] if len(p) > 1 else ""
+
+    async def show(text, kb):
+        try:
+            if q.message.photo:
+                await context.bot.send_message(q.message.chat_id, text, parse_mode=HTML, reply_markup=kb)
+            else:
+                await q.edit_message_text(text, parse_mode=HTML, reply_markup=kb)
+        except BadRequest:
+            pass            # «message is not modified»
+
+    if act == "m":
+        await q.answer()
+        return await show(_caption(), _list_kb())
+    if act == "p":
+        await q.answer()
+        rows = db.execute("SELECT h.*, s.price, s.name FROM holdings h JOIN stocks s ON s.sym=h.sym WHERE h.user_id=?",
+                          (me.id,)).fetchall()
+        if not rows:
+            return await q.answer("Портфель пуст", show_alert=True)
+        total = sum(int(r["price"] * r["qty"]) for r in rows)
+        txt = "💼 <b>Портфель</b> · " + esc(disp(me)) + "\n" + "\n".join(
+            f"{r['sym']}: {r['qty']} шт. · {int(r['price'] * r['qty'])} {COIN}" for r in rows) + f"\nВсего: {total} {COIN}"
+        return await context.bot.send_message(q.message.chat_id, txt, parse_mode=HTML)
+    if act == "t":
+        rows = db.execute("SELECT i.profit, u.name FROM investors i JOIN users u ON u.user_id=i.user_id "
+                          "ORDER BY i.profit DESC LIMIT 5").fetchall()
+        if not rows:
+            return await q.answer("Пока нет закрытых сделок", show_alert=True)
+        await q.answer()
+        return await context.bot.send_message(
+            q.message.chat_id, "🏆 <b>Топ инвесторов</b>\n" + "\n".join(
+                f"{i}. {esc(r['name'] or '?')}: {r['profit']:+d}" for i, r in enumerate(rows, 1)), parse_mode=HTML)
+    s = find_stock(p[2]) if len(p) > 2 else None
+    if not s:
+        return await q.answer("Компания не найдена", show_alert=True)
+    if act == "o":
+        await q.answer()
+        return await show(_card(me.id, s), _card_kb(s["sym"]))
+    if act in ("b", "s") and len(p) == 4 and p[3].isdigit():
+        n = int(p[3])
+        if act == "b":
+            ok, res = buy_stock(me.id, s, n)
+            await q.answer(f"Куплено {n} шт. за {res} {COIN}" if ok else res, show_alert=not ok)
+        else:
+            h = holding(me.id, s["sym"])
+            ok, res = sell_stock(me.id, s, n or (h["qty"] if h else 1))
+            await q.answer(f"Продано {res[3]} шт.: +{res[0]} {COIN} (итог {res[1]:+d})" if ok else res, show_alert=not ok)
+        return await show(_card(me.id, s), _card_kb(s["sym"]))
+    await q.answer()
 
 
 async def _buy(update, me, name, qty):
@@ -256,7 +360,7 @@ async def _top(update):
 
 
 async def stocks_tick(bot):
-    """Планировщик: раз в 30 минут двигает цены и присылает картинку при сильном скачке."""
+    """Планировщик: раз в 45 минут двигает цены и присылает картинку при сильном скачке."""
     init_stocks()
     moves = tick_prices()
     if not moves or QUIET_HOURS[0] <= now().hour < QUIET_HOURS[1]:

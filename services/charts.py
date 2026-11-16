@@ -68,8 +68,56 @@ def alert(sym, name, price, prev, hist):
     d.text((40, 30), "ВЗЛЁТ" if up else "ПАДЕНИЕ", font=_font(54, True), fill=col)
     d.text((40, 110), f"{sym} · {name}", font=_font(30), fill=TXT)
     d.text((40, 160), f"{price:.2f}", font=_font(64, True), fill=TXT)
-    d.text((40, 245), f"{ch:+.1f}% за полчаса", font=_font(34, True), fill=col)
+    d.text((40, 245), f"{ch:+.1f}% за 45 минут", font=_font(34, True), fill=col)
     _arrow(d, 790, 110, 60, up, col)
     d.rounded_rectangle([30, 320, W - 30, H - 30], 20, fill=(0, 0, 0))
     _spark(d, hist, (60, 345, W - 60, H - 55), col, 6)
+    return _png(img)
+
+
+# ---------- картинки вируса ----------
+def _virus(d, cx, cy, r, col):
+    import math
+    for k in range(14):
+        a = k * math.pi * 2 / 14
+        x1, y1 = cx + math.cos(a) * r, cy + math.sin(a) * r
+        x2, y2 = cx + math.cos(a) * (r + 34), cy + math.sin(a) * (r + 34)
+        d.line([(x1, y1), (x2, y2)], fill=col, width=9)
+        d.ellipse([x2 - 12, y2 - 12, x2 + 12, y2 + 12], fill=col)
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=col)
+    for dx, dy, rr in ((-28, -22, 14), (30, -10, 10), (-6, 30, 12), (24, 34, 8)):
+        d.ellipse([cx + dx - rr, cy + dy - rr, cx + dx + rr, cy + dy + rr], fill=(20, 60, 30))
+    d.ellipse([cx - 30, cy - 36, cx - 12, cy - 18], fill=(255, 255, 255))
+    d.ellipse([cx + 12, cy - 36, cx + 30, cy - 18], fill=(255, 255, 255))
+    d.ellipse([cx - 24, cy - 30, cx - 16, cy - 22], fill=(0, 0, 0))
+    d.ellipse([cx + 16, cy - 30, cx + 24, cy - 22], fill=(0, 0, 0))
+
+
+def infect_card(text="ЗАРАЖЕНИЕ", sub=""):
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (800, 420), (14, 36, 22))
+    d = ImageDraw.Draw(img)
+    for i in range(0, 800, 40):
+        d.line([(i, 0), (i - 200, 420)], fill=(18, 46, 28), width=2)
+    _virus(d, 600, 210, 80, (120, 230, 90))
+    d.text((40, 90), text, font=_font(56, True), fill=(150, 255, 110))
+    d.text((40, 180), sub, font=_font(30), fill=TXT)
+    d.text((40, 330), "Лечение: «аптека»", font=_font(28), fill=DIM)
+    return _png(img)
+
+
+def cure_card(text="ВЫЛЕЧЕН"):
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (800, 420), (14, 30, 48))
+    d = ImageDraw.Draw(img)
+    for i in range(0, 800, 40):
+        d.line([(i, 0), (i - 200, 420)], fill=(20, 40, 62), width=2)
+    d.rounded_rectangle([430, 150, 720, 270], 60, fill=(240, 244, 250))
+    d.rounded_rectangle([575, 150, 720, 270], 60, fill=(80, 170, 255))
+    d.rectangle([575, 150, 650, 270], fill=(80, 170, 255))
+    d.rectangle([575, 150, 590, 270], fill=(60, 140, 220))
+    d.rectangle([470, 195, 540, 225], fill=(231, 76, 60))
+    d.rectangle([490, 175, 520, 245], fill=(231, 76, 60))
+    d.text((40, 90), text, font=_font(56, True), fill=(120, 200, 255))
+    d.text((40, 180), "Иммунитет и бонус", font=_font(28), fill=TXT)
     return _png(img)

@@ -10,7 +10,7 @@ from core.utils import level_of, link, urow
 from database.db import db
 from services.clans import clan_bonus_pct
 from services.relations import is_married, pair_of, partner_of
-from services.virus import SICK_PAY_MULT, is_sick
+from services.virus import BOOST_PCT, SICK_PAY_MULT, has_boost, is_sick
 
 
 # ============================ ЖИЗНЬ: РАБОТЫ, БРАК, ДОМА, ПИТОМЦЫ ============================
@@ -94,6 +94,8 @@ def job_pay(row):
     name, base, cd, req = JOBS[row["job"]]
     mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP + house_bonus_pct(row["user_id"]) / 100 \
         + clan_bonus_pct(row["user_id"]) / 100
+    if has_boost(row):
+        mult += BOOST_PCT / 100
     if is_sick(row):
         mult *= SICK_PAY_MULT
     return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE))
