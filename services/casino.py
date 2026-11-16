@@ -3,8 +3,44 @@
 
 import random
 
-MIN_BET, MAX_BET = 5, 100
-DAY_LOSS_LIMIT = 300         # больше этого за сутки проиграть нельзя
+from database.db import db
+
+
+def chips_of(uid):
+    r = db.execute("SELECT chips FROM casino WHERE user_id=?", (uid,)).fetchone()
+    if r is None:
+        db.execute("INSERT INTO casino(user_id,chips,best) VALUES(?,?,?)", (uid, START_CHIPS, START_CHIPS))
+        db.commit()
+        return START_CHIPS
+    return r["chips"]
+
+
+def chips_add(uid, n, name=None):
+    chips_of(uid)
+    db.execute("UPDATE casino SET chips=chips+?, best=MAX(best, chips+?)" + (", name=?" if name else "") +
+               " WHERE user_id=?", (n, n) + ((name,) if name else ()) + (uid,))
+    db.commit()
+
+
+def claim_bonus(uid, day):
+    """-> сумма бонуса или 0, если сегодня уже брали"""
+    chips_of(uid)
+    r = db.execute("SELECT bonus_day FROM casino WHERE user_id=?", (uid,)).fetchone()
+    if r["bonus_day"] == day:
+        return 0
+    db.execute("UPDATE casino SET bonus_day=? WHERE user_id=?", (day, uid))
+    db.commit()
+    chips_add(uid, DAILY_BONUS)
+    return DAILY_BONUS
+
+
+def top_chips(n=10):
+    return db.execute("SELECT user_id,name,chips FROM casino ORDER BY chips DESC LIMIT ?", (n,)).fetchall()
+
+CHIP = "🪙 фишек"
+MIN_BET, MAX_BET = 10, 1000
+START_CHIPS = 1000           # стартовый баланс
+DAILY_BONUS = 500            # бонус раз в сутки
 COOLDOWN = 3                 # секунд между ставками
 
 SLOT_W = {"🍒": 6, "🍋": 5, "🔔": 4, "💎": 2, "7️⃣": 1}
