@@ -12,15 +12,11 @@ from core.helpers import reply
 from core.logger import log
 from core.ranks import has_rank
 from core.utils import disp, esc, link, touch, today
-from database.state import state_get, state_set
 from handlers.finance import _send_photo
-from services.clans import PTS_WIN, war_add
-from services.economy import COIN, give_coins
 from services.mafia import (KILL_TEXT, MAX_PLAYERS, MIN_PLAYERS, ROLES, Game)
 from services.mafia_cards import end_card, phase_card, role_card
 
 NIGHT_SEC, DISC_SEC, VOTE_SEC, HUNTER_SEC, LOBBY_SEC = 60, 75, 40, 30, 300
-WIN_REWARD, PLAY_REWARD, DAILY_REWARDS = 40, 10, 3
 GAMES, CHAT_GAME = {}, {}
 _next = [1]
 B = InlineKeyboardButton
@@ -74,7 +70,7 @@ RULES = ("🎭 <b>Мафия: правила</b>\n"
          "кого повесить. Побеждает город, если убиты все злодеи; мафия — когда её не меньше, чем остальных; "
          "убийца-одиночка — если остаётся последним.\n\n<b>Роли</b>\n" +
          "\n".join(f"{v[1]} <b>{v[0]}</b> — {v[3]}" for v in ROLES.values()) +
-         f"\n\nНачать: «мафия». Награда: {WIN_REWARD} {COIN} победителям (игры от 6 человек, до {DAILY_REWARDS} в сутки).")
+         f"\n\nНачать: «мафия».")
 
 
 async def handle_mafia_text(update, context, low, text):
@@ -143,19 +139,6 @@ async def _finish(bot, g, side, cancelled=False, why="Игра остановл�
     await _send_photo((bot, g.chat_id), end_card(side),
                       f"🏁 <b>Игра окончена!</b> Победа: {'мафии' if side == 'mafia' else 'города' if side == 'town' else 'убийцы'}\n"
                       f"Победители: {names}\n\n<b>Роли</b>\n{reveal}")
-    if len(g.players) >= 6 and g.day >= 2:
-        d = today()
-        for p in g.players.values():
-            k = f"maf_{d}_{p.uid}"
-            n = int(state_get(k) or 0)
-            if n >= DAILY_REWARDS:
-                continue
-            state_set(k, n + 1)
-            if p.uid in winners:
-                give_coins(p.uid, WIN_REWARD)
-                war_add(p.uid, PTS_WIN)
-            else:
-                give_coins(p.uid, PLAY_REWARD)
 
 
 # ---------------- лобби ----------------
