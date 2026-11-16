@@ -88,12 +88,9 @@ async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None
             return await bot.send_photo(chat_id, media, **kw)
         return await bot.send_document(chat_id, media, **kw)
 
-    cached = []
     for action in actions:
         rows = db.execute("SELECT kind, file_id FROM rp_media WHERE action=?", (action,)).fetchall()
-        cached += rows
-        # пока в базе мало гифок, иногда берём новую из сети, чтобы набрать разнообразие
-        if rows and (len(rows) >= CACHE_TARGET or not api_cat or random.random() > 0.35):
+        if rows:
             r = random.choice(rows)
             try:
                 return await send(r["kind"], r["file_id"])
@@ -118,9 +115,7 @@ async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None
         url = await rp_gif_url(api_cat)
         if url:
             try:
-                m = await send("animation", url)
-                _remember(actions, m)
-                return m
+                return await send("animation", url)
             except Exception as e:
                 print("RP: гифка по ссылке не ушла:", repr(e)[:150])
                 try:
@@ -128,42 +123,11 @@ async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None
                     from io import BytesIO
                     async with httpx.AsyncClient(timeout=20, headers=RP_UA) as c:
                         data = (await c.get(url)).content
-                    m = await send("animation", BytesIO(data))
-                    _remember(actions, m)
-                    return m
+                    return await send("animation", BytesIO(data))
                 except Exception as e2:
                     print("RP: и файлом не ушла:", repr(e2)[:150])
-    if cached:
-        r = random.choice(cached)
-        try:
-            return await send(r["kind"], r["file_id"])
-        except Exception as e:
-            print("Кэш-картинка не ушла:", repr(e)[:150])
     return await bot.send_message(chat_id, text, parse_mode=HTML, reply_markup=markup,
                                   link_preview_options=NOPREV, reply_parameters=rp)
-
-
-CACHE_TARGET = 8          # сколько гифок на действие копить в базе (потом они грузятся мгновенно)
-
-
-def _remember(actions, msg):
-    """Запоминаем file_id отправленной гифки: в следующий раз она придёт из Telegram без загрузки."""
-    try:
-        if not actions or msg is None:
-            return
-        a = msg.animation or msg.document
-        if a is None:
-            return
-        act = actions[0]
-        n = db.execute("SELECT COUNT(*) c FROM rp_media WHERE action=?", (act,)).fetchone()["c"]
-        if n >= CACHE_TARGET or db.execute("SELECT 1 FROM rp_media WHERE file_unique=?", (a.file_unique_id,)).fetchone():
-            return
-        import time as t
-        db.execute("INSERT INTO rp_media(action,kind,file_id,file_unique,added_by,created) VALUES(?,?,?,?,?,?)",
-                   (act, "animation", a.file_id, a.file_unique_id, "auto", t.time()))
-        db.commit()
-    except Exception as e:
-        print("Кэш гифки не записан:", repr(e)[:120])
 
 
 # ---------- мини-игры на работах ----------
