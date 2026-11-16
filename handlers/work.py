@@ -11,6 +11,7 @@ from core.helpers import reply
 from core.utils import disp, esc, link, urow
 from database.db import db
 from handlers.common import life_send, own_kb
+from services.court import jail_left
 from services.clans import PTS_SHIFT, war_add
 from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
@@ -51,6 +52,9 @@ async def life_work(update, context):
     row = urow(me.id)
     if row["job"] not in JOBS:
         return await reply(update, "У тебя нет работы. Напиши «найти работу» 💼")
+    jl = jail_left(row)
+    if jl:
+        return await reply(update, f"🔒 Ты в тюрьме ещё {fmt_minutes(jl // 60 + 1)}. Работать нельзя. Залог: «залог»")
     t = open_task(me.id)
     if t and t["expires"] > time.time():
         return await reply(update, "Ты уже на смене, сначала закончи задание выше ☝️ "

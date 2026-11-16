@@ -13,6 +13,7 @@ from database.db import db
 from database.state import state_del, state_get, state_set
 from handlers.life import life_daily
 from handlers.clans import clan_tick
+from handlers.court import court_tick
 from handlers.finance import stocks_tick
 from handlers.profile_extra import bday_tick
 from handlers.monopoly import monopoly_tick
@@ -30,6 +31,7 @@ async def tick(app):
     db.commit()
     await monopoly_tick(bot)
     await clan_tick(bot)
+    await court_tick(bot)
     await bday_tick(bot)
     await stocks_tick(bot)
     for name, (h, m), fn in (

@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS holdings(
   user_id INTEGER, sym TEXT, qty INTEGER DEFAULT 0, cost INTEGER DEFAULT 0, PRIMARY KEY(user_id, sym));
 CREATE TABLE IF NOT EXISTS stock_day(user_id INTEGER, day TEXT, spent INTEGER DEFAULT 0, PRIMARY KEY(user_id, day));
 CREATE TABLE IF NOT EXISTS investors(user_id INTEGER PRIMARY KEY, profit INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS crimes(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, criminal INTEGER, victim INTEGER, amount INTEGER, ts REAL, status TEXT);
+CREATE TABLE IF NOT EXISTS court_cases(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, crime_id INTEGER, plaintiff INTEGER, defendant INTEGER, amount INTEGER,
+  chat_id INTEGER, created REAL, end REAL, status TEXT, lawyer_p INTEGER DEFAULT 0, lawyer_d INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS court_votes(case_id INTEGER, user_id INTEGER, vote TEXT, PRIMARY KEY(case_id, user_id));
 CREATE TABLE IF NOT EXISTS reports(
   id INTEGER PRIMARY KEY AUTOINCREMENT, target_id INTEGER, target_name TEXT, msg_id INTEGER,
   reporter TEXT, reason TEXT, created REAL, status TEXT);
@@ -89,7 +95,7 @@ for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEG
              "job TEXT DEFAULT ''", "job_shifts INTEGER DEFAULT 0", "last_work REAL DEFAULT 0",
              "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''", "clan_id INTEGER DEFAULT 0",
              "ztitle TEXT DEFAULT ''", "nick TEXT DEFAULT ''", "city TEXT DEFAULT ''", "bday TEXT DEFAULT ''",
-             "gift_until REAL DEFAULT 0", "boost_until REAL DEFAULT 0", "sick_until REAL DEFAULT 0", "immune_until REAL DEFAULT 0", "infect_at REAL DEFAULT 0"):
+             "gift_until REAL DEFAULT 0", "jail_until REAL DEFAULT 0", "rob_at REAL DEFAULT 0", "boost_until REAL DEFAULT 0", "sick_until REAL DEFAULT 0", "immune_until REAL DEFAULT 0", "infect_at REAL DEFAULT 0"):
     try:
         db.execute("ALTER TABLE users ADD COLUMN " + _col)
     except sqlite3.OperationalError:
