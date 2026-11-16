@@ -83,4 +83,4 @@ async def handle_rp(update, context, key, dot=False):
             if key in REL_PIC:
                 actions.insert(0, "отн:" + REL_PIC[key])
     await send_with_pic(context.bot, update.effective_chat.id, text, actions,
-                        reply_to=update.effective_message.message_id, api_cat=RP_API.get(key))
+                        reply_to=update.effective_message.message_id, api_cat=RP_API.get(key), anime=True)

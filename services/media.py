@@ -59,10 +59,24 @@ def local_rp_files(action):
 
 
 async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None,
-                        markup=None, gif_query=None):
+                        markup=None, gif_query=None, anime=False):
     """Картинка к сообщению. Порядок: свои картинки из базы -> файлы из папки rp ->
     гифка с nekos.best -> просто текст."""
     rp = ReplyParameters(message_id=reply_to, allow_sending_without_reply=True) if reply_to else None
+
+    anime = anime or any(a.startswith(("отн:", "свид:")) for a in actions)
+    if not anime:        # аниме и гифки только для rp и отношений; остальное: минималистичная карточка
+        from services.cards_min import card_for
+        for a in actions:
+            img = card_for(a)
+            if img is not None:
+                try:
+                    return await bot.send_photo(chat_id, img, caption=text, parse_mode=HTML, reply_parameters=rp,
+                                                reply_markup=markup)
+                except Exception as e:
+                    print("Карточка не ушла:", repr(e)[:150])
+        return await bot.send_message(chat_id, text, parse_mode=HTML, reply_markup=markup,
+                                      link_preview_options=NOPREV, reply_parameters=rp)
 
     async def send(kind, media):
         kw = dict(caption=text, parse_mode=HTML, reply_parameters=rp, reply_markup=markup)
