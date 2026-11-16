@@ -171,12 +171,4 @@ async def profile_view(bot, row):
                                                       ("Серия дней", st), ("В чате", f"{days} дн.")], foot=foot), av)
     except Exception:
         log.exception("profile_card")
-    extra = "".join(f"{lab}: {esc(_col(row, col))}\n" for lab, col in (("📝 Ник", "nick"), ("🏙 Город", "city")) if _col(row, col))
-    tag = f"<b>{esc(row['tag'])}</b>\n" if (row["tag"] or "").strip() else ""
-    cap = (f"👤 <b>{esc(name)}</b>\n{tag}{extra}\n"
-           f"📈 <b>Актив</b>\nсегодня {s(d, d)} · неделя {s(wk, d)} · месяц {s(mo, d)} · всего {row['total']}\n\n"
-           f"🔥 <b>Серия дней</b>\n{st} (рекорд {row['best_streak']})\n\n"
-           f"🕰 <b>Олдство</b>\n{ot}\n\n"
-           f"🎯 <b>Очки</b>\n🧠 {row['quiz_pts']} · 🎮 {row['game_pts']} · 📜 {row['quest_pts']}\n\n"
-           f"<i>Первое появление: {fmt_when(row['first_seen'])}\nПоследний актив: {fmt_when(row['last_seen'])}</i>")
-    return card, cap
+    return card, await build_profile(bot, row)
