@@ -28,22 +28,28 @@ async def life_jobs_find(update, context):
     row = urow(me.id)
     lines = ["💼 <b>Биржа труда</b>"]
     if row["job"] in JOBS:
-        lines.append(f"Сейчас ты работаешь: <b>{JOBS[row['job']][0]}</b>. «Работать» чтобы выйти на смену, "
-                     f"«уволиться» чтобы сменить работу.\n")
+        lines.append(f"Сейчас ты работаешь: <b>{JOBS[row['job']][0]}</b>\n«работать» — выйти на смену, «уволиться» — сменить работу")
+    lines.append("")
     avail, locked = [], []
     for k, (name, pay, cd, req) in JOBS.items():
         miss = job_missing(row, req)
         (locked if miss else avail).append((k, name, pay, cd, miss))
-    offers = random.sample(avail, min(3, len(avail)))
-    lines.append("<b>Тебе предлагают:</b>")
-    for k, name, pay, cd, _ in offers:
-        lines.append(f"• {name}: {shown_pay(pay)} славКоин за смену, раз в {shown_cd(cd):g} ч.")
+    avail.sort(key=lambda x: x[2])
+    locked.sort(key=lambda x: x[2])
+    if avail:
+        lines.append("✅ <b>Доступно сейчас</b>")
+        for k, name, pay, cd, _ in avail:
+            lines.append(f"• <b>{name}</b> — {shown_pay(pay)} славКоин · раз в {shown_cd(cd):g} ч")
+        lines.append("")
     if locked:
-        lines.append("\n<b>Пока недоступно:</b>")
-        for k, name, pay, cd, miss in locked[:4]:
-            lines.append(f"🔒 {name} ({shown_pay(pay)} славКоин): нужно {', '.join(miss)}")
-    kb = own_kb([[InlineKeyboardButton(f"💼 {name} · {shown_pay(pay)} славКоин", callback_data=f"life:job:{me.id}:{k}")]
-                 for k, name, pay, cd, _ in offers])
+        lines.append("🔒 <b>Откроется позже</b>")
+        for k, name, pay, cd, miss in locked:
+            lines.append(f"• <b>{name}</b> — {shown_pay(pay)} славКоин · раз в {shown_cd(cd):g} ч\n   нужно: {', '.join(miss)}")
+        lines.append("")
+    lines.append("Выбери профессию кнопкой ниже 👇" if avail else "Пока всё закрыто, поиграй в чате и возвращайся")
+    btns = [InlineKeyboardButton(f"{name} · {shown_pay(pay)}", callback_data=f"life:job:{me.id}:{k}")
+            for k, name, pay, cd, _ in avail]
+    kb = own_kb([btns[i:i + 2] for i in range(0, len(btns), 2)]) if btns else None
     await life_send(update, context, "\n".join(lines), kb=kb)
 
 
