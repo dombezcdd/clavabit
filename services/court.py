@@ -8,7 +8,7 @@ from core.utils import urow
 from database.db import db
 
 ROB_CD = 3 * 3600
-ROB_CHANCE = 0.5
+ROB_CHANCE = 0.35
 ROB_MIN_VICTIM = 40
 ROB_MAX = 300
 ROB_DAY_MAX = 3              # попыток в сутки у одного вора
