@@ -11,6 +11,8 @@ ROB_CD = 3 * 3600
 ROB_CHANCE = 0.5
 ROB_MIN_VICTIM = 40
 ROB_MAX = 300
+ROB_DAY_MAX = 3              # попыток в сутки у одного вора
+ROB_GUARD = 3600             # после ограбления жертву час не трогают
 ROB_FAIL_FINE = 15
 FILE_WINDOW = 30 * 60          # сколько после ограбления можно подать в суд
 TRIAL_MIN = 5                  # минут идёт голосование
@@ -35,6 +37,19 @@ def rob(thief_id, victim_id):
         return "cd", int(left)
     if not v or (v["coins"] or 0) < ROB_MIN_VICTIM:
         return "poor", ROB_MIN_VICTIM
+    from core.utils import today
+    from database.state import state_get, state_set
+    key = f"rob_{today()}_{thief_id}"
+    if int(state_get(key) or 0) >= ROB_DAY_MAX:
+        return "limit", ROB_DAY_MAX
+    day_start = time.time() - 86400
+    if db.execute("SELECT 1 FROM crimes WHERE kind='rob' AND criminal=? AND victim=? AND ts>?",
+                  (thief_id, victim_id, day_start)).fetchone():
+        return "same", 0
+    last = db.execute("SELECT MAX(ts) m FROM crimes WHERE kind='rob' AND victim=?", (victim_id,)).fetchone()["m"] or 0
+    if last + ROB_GUARD > time.time():
+        return "guard", int(last + ROB_GUARD - time.time())
+    state_set(key, int(state_get(key) or 0) + 1)
     db.execute("UPDATE users SET rob_at=? WHERE user_id=?", (time.time(), thief_id))
     if random.random() > ROB_CHANCE:
         db.execute("UPDATE users SET coins=MAX(0, coins-?) WHERE user_id=?", (ROB_FAIL_FINE, thief_id))

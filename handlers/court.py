@@ -72,6 +72,12 @@ async def _rob(update, context, me, text):
         await reply(update, f"🔒 Ты в тюрьме ещё {fmt_minutes(data // 60 + 1)}. Залог: «залог» ({BAIL} {COIN})")
     elif code == "cd":
         await reply(update, f"Полиция ещё ищет тебя. Следующая попытка через {fmt_minutes(data // 60 + 1)} ⏳")
+    elif code == "limit":
+        await reply(update, f"🚔 На сегодня хватит: не больше {data} попыток краж в сутки. Приходи завтра")
+    elif code == "same":
+        await reply(update, f"{who} ты уже грабил(а) за последние сутки. Выбери другую жертву")
+    elif code == "guard":
+        await reply(update, f"🛡 {who} только что ограбили, рядом полиция. Подожди {fmt_minutes(data // 60 + 1)}")
     elif code == "poor":
         await reply(update, f"У {who} почти ничего нет (меньше {data} {COIN}). Не стоит рисковать")
     elif code == "caught":
