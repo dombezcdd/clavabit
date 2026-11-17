@@ -68,13 +68,10 @@ async def send_with_pic(bot, chat_id, text, actions, reply_to=None, api_cat=None
     if not anime:        # аниме и гифки только для rp и отношений; остальное: минималистичная карточка
         from services.cards_min import card_for
         for a in actions:
-            img = card_for(a)
-            if img is not None:
-                try:
-                    return await bot.send_photo(chat_id, img, caption=text, parse_mode=HTML, reply_parameters=rp,
-                                                reply_markup=markup)
-                except Exception as e:
-                    print("Карточка не ушла:", repr(e)[:150])
+            if a.partition(":")[0] in ("раб", "проф", "дом", "пет"):
+                from handlers.finance import _send_photo
+                return await _send_photo((bot, chat_id), lambda a=a: card_for(a), text, reply_markup=markup,
+                                         key="card_" + a, reply_parameters=rp)
         return await bot.send_message(chat_id, text, parse_mode=HTML, reply_markup=markup,
                                       link_preview_options=NOPREV, reply_parameters=rp)
 

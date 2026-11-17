@@ -34,10 +34,10 @@ def _short(name):
     return (name or "?")[:22]
 
 
-async def dm(bot, uid, text, kb=None, photo=None):
+async def dm(bot, uid, text, kb=None, photo=None, pkey=None):
     try:
         if photo is not None:
-            await _send_photo((bot, uid), photo, text, reply_markup=kb)
+            await _send_photo((bot, uid), photo, text, reply_markup=kb, key=pkey)
         else:
             await bot.send_message(uid, text, parse_mode=HTML, reply_markup=kb)
         return True
@@ -136,7 +136,7 @@ async def _finish(bot, g, side, cancelled=False, why="Игра остановл�
                        for p in g.players.values())
     winners = set(g.winners(side))
     names = ", ".join(link(u, g.players[u].name) for u in winners) or "—"
-    await _send_photo((bot, g.chat_id), end_card(side),
+    await _send_photo((bot, g.chat_id), lambda: end_card(side), key=f"maf_end_{side}", caption=
                       f"🏁 <b>Игра окончена!</b> Победа: {'мафии' if side == 'mafia' else 'города' if side == 'town' else 'убийцы'}\n"
                       f"Победители: {names}\n\n<b>Роли</b>\n{reveal}")
 
@@ -333,12 +333,12 @@ async def _run(bot, g):
                 mates = [x for x in g.players.values() if x.team == "mafia" and x.uid != p.uid]
                 team = "\nТвоя команда: " + (", ".join(esc(x.name) + f" ({ROLES[x.role][0]})" for x in mates) or "ты один(а)")
             await dm(bot, p.uid, f"🎭 Игра началась! Ты — <b>{ROLES[p.role][1]} {ROLES[p.role][0]}</b>.{team}",
-                     photo=role_card(p.role))
+                     photo=(lambda r=p.role: role_card(r)), pkey=f"maf_role_{p.role}")
         await bot.send_message(g.chat_id, "🎭 Роли разосланы в личку. Первая ночь…", parse_mode=HTML)
         while True:
             # ---------- ночь ----------
             g.phase, g.actions, g.night_ev = "night", {}, asyncio.Event()
-            await _send_photo((bot, g.chat_id), phase_card("night", g.day),
+            await _send_photo((bot, g.chat_id), lambda: phase_card("night", g.day), key=f"maf_night_{g.day}", caption=
                               f"🌙 <b>Ночь {g.day}.</b> Город засыпает. Действуй в личке с ботом ({NIGHT_SEC} сек).")
             await _send_night(bot, g)
             try:
@@ -358,7 +358,7 @@ async def _run(bot, g):
             if "saved" in res["notes"]:
                 lines.append("💉 Кого-то спасли от гибели!")
             hunters = [u for u in dead if g.players[u].role == "hunter"]
-            await _send_photo((bot, g.chat_id), phase_card("day", g.day), "\n".join(lines))
+            await _send_photo((bot, g.chat_id), lambda: phase_card("day", g.day), "\n".join(lines), key=f"maf_day_{g.day}")
             if hunters:
                 dead += await _hunters(bot, g, hunters)
             side = g.winner()

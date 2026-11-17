@@ -6,7 +6,7 @@ import re
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import BadRequest
+from telegram.error import BadRequest, NetworkError, TimedOut
 
 from config import ALLOWED, CHAT_ID, HTML, QUIET_HOURS
 from core.durations import fmt_minutes
@@ -159,17 +159,41 @@ def _rows():
             db.execute("SELECT * FROM stocks ORDER BY rowid").fetchall()]
 
 
-async def _send_photo(target, data, caption, reply_markup=None, **kw):
-    """target: сообщение (reply_photo) или (bot, chat_id)."""
-    for attempt in range(3):
+UPLOAD_T = dict(read_timeout=25, write_timeout=25, connect_timeout=10, pool_timeout=10)
+FAST_T = dict(read_timeout=10, write_timeout=10, connect_timeout=8, pool_timeout=8)
+
+
+async def _send_photo(target, data, caption, reply_markup=None, key=None, **kw):
+    """target: сообщение (reply_photo) или (bot, chat_id).
+    key: постоянная картинка (карточка роли и т. п.): после первой загрузки шлём её по file_id, без загрузки файла.
+    data: BytesIO или функция, которая его создаёт. Одна попытка загрузки, при провале сразу текст."""
+    from database.state import state_get, state_set
+
+    async def go(photo, t):
+        if isinstance(target, tuple):
+            return await target[0].send_photo(target[1], photo, caption=caption, parse_mode=HTML,
+                                              reply_markup=reply_markup, **t, **kw)
+        return await target.reply_photo(photo, caption=caption, parse_mode=HTML, reply_markup=reply_markup, **t, **kw)
+
+    fid = state_get("fid_" + key) if key else None
+    if fid:
         try:
-            if isinstance(target, tuple):
-                return await target[0].send_photo(target[1], data, caption=caption, parse_mode=HTML, reply_markup=reply_markup, **SLOW)
-            return await target.reply_photo(data, caption=caption, parse_mode=HTML, reply_markup=reply_markup, **SLOW)
+            return await go(fid, FAST_T)
         except Exception as ex:
-            log.warning("биржа send_photo (%s): %r", attempt + 1, ex)
-            data.seek(0)
-            await asyncio.sleep(1.5)
+            log.warning("фото по file_id (%s): %r", key, ex)
+            if isinstance(ex, (TimedOut, NetworkError)) and not isinstance(ex, BadRequest):
+                fid = "timeout"
+            else:
+                state_set("fid_" + key, "")
+    if fid != "timeout":
+        try:
+            photo = data() if callable(data) else data
+            m = await go(photo, UPLOAD_T)
+            if key and getattr(m, "photo", None):
+                state_set("fid_" + key, m.photo[-1].file_id)
+            return m
+        except Exception as ex:
+            log.warning("send_photo (%s): %r", key or "без ключа", ex)
     if isinstance(target, tuple):
         return await target[0].send_message(target[1], caption, parse_mode=HTML, reply_markup=reply_markup)
     return await target.reply_text(caption, parse_mode=HTML, reply_markup=reply_markup)
