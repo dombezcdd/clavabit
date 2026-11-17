@@ -69,6 +69,8 @@ async def life_pet_feed(update, context):
     for p in pets:
         db.execute("UPDATE pets SET fed_day=? WHERE id=?", (today(), p["id"]))
     db.commit()
+    from services.xp import quest_hit
+    await quest_hit(context.bot, me.id, "feed", update.effective_chat.id)
     await life_send(update, context, f"🍖 {link(me.id, disp(me))} покормил(а) питомцев: "
                                      + ", ".join(esc(p["name"]) for p in pets) + f" (−{cost} славКоин)",
                     key="пет:кормление", api="feed")

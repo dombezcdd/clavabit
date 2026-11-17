@@ -20,6 +20,7 @@ from handlers.clans import on_clan_btn
 from handlers.mafia import on_mafia_btn
 from handlers.casino import on_casino_btn
 from handlers.admin import on_admin_btn
+from handlers.duelgames import on_duelgame_btn
 from handlers.court import on_court_btn
 from handlers.coop import on_coop_btn
 from handlers.finance import on_stock_btn
@@ -154,6 +155,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_date_btn, pattern=r"^date:"))
     app.add_handler(CallbackQueryHandler(on_game_btn, pattern=r"^game:"))
     app.add_handler(CallbackQueryHandler(on_challenge_btn, pattern=r"^ch:"))
+    app.add_handler(CallbackQueryHandler(on_duelgame_btn, pattern=r"^dg:"))
     app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)

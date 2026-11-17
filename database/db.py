@@ -113,6 +113,11 @@ try:
     db.execute("ALTER TABLE daily ADD COLUMN msgs_all INTEGER DEFAULT 0")   # все сообщения для «топ дня» (как в Ирисе)
 except sqlite3.OperationalError:
     pass
+for _c in ("shifts", "biz", "casino", "duelw", "feed", "longmsg", "stock", "mafia"):
+    try:
+        db.execute(f"ALTER TABLE daily ADD COLUMN {_c} INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
 db.commit()
 
 

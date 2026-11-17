@@ -147,6 +147,8 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     db.commit()
     give_coins(uid, pay)
     war_add(uid, PTS_SHIFT)
+    from services.xp import quest_hit
+    await quest_hit(bot, uid, "shifts", chat_id)
     if is_sick(row):
         note += "\n🤒 Болезнь: зарплата вдвое меньше. Лечение: «аптека»"
     xp_n = shift_xp(shifts)

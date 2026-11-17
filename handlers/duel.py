@@ -49,7 +49,8 @@ async def run_dice(bot, chat, a_id, b_id, reply_to=None):
 async def run_duel(bot, chat, a_id, b_id, reply_to=None):
     ra, rb = urow(a_id), urow(b_id)
     pa, pb = await profile_score(bot, ra), await profile_score(bot, rb)
-    sa, sb = sum(pa.values()) + random.randint(0, 15), sum(pb.values()) + random.randint(0, 15)
+    sa = round(min(sum(pa.values()), 100) * 0.1) + random.randint(0, 30)      # профиль даёт максимум +10, остальное удача
+    sb = round(min(sum(pb.values()), 100) * 0.1) + random.randint(0, 30)
 
     def fmt(p):
         return ", ".join(f"{k} {v}" for k, v in p.items() if v)
@@ -59,14 +60,14 @@ async def run_duel(bot, chat, a_id, b_id, reply_to=None):
     db.execute("UPDATE users SET game_pts=game_pts+2, duel_w=duel_w+1 WHERE user_id=?", (win["user_id"],))
     db.execute("UPDATE users SET duel_l=duel_l+1 WHERE user_id=?", (lose["user_id"],))
     db.commit()
+    from services.xp import quest_hit
+    await quest_hit(bot, win["user_id"], "duelw", chat)
     await _send(bot, chat,
                 f"⚔️ <b>Дуэль профилей</b>\n"
                 f"{esc(ra['name'])}: <b>{sa}</b> ({fmt(pa)})\n"
                 f"{esc(rb['name'])}: <b>{sb}</b> ({fmt(pb)})\n\n"
                 f"🏆 Побеждает {link(win['user_id'], win['name'])} (+2 игровых очка)\n"
-                f"<i>В счёт идут: аватарка, описание, юзернейм, уровень, репутация, олдство, тег, "
-                f"NFT-подарки и обычные подарки из профиля + немного удачи. "
-                f"Скрытые подарки бот не видит. NFT-юзернейм отличить нельзя.</i>", reply_to)
+                f"<i>Профиль даёт максимум +10 очков, остальное решает удача: слабый профиль тоже может выиграть.</i>", reply_to)
     await played(bot, a_id)
     await played(bot, b_id)
 
@@ -83,13 +84,14 @@ def challenge_kb(kind, a, b):
 async def send_challenge(update, context, kind):
     me = update.effective_user
     other = target_user(update)
-    cmd = "/duel" if kind == "duel" else "/dice"
+    cmd = {"duel": "«дуэль»", "dice": "/dice", "rps": "«кнб»", "prof": "«дуэль профилей»"}.get(kind, "/duel")
     if not other or other.id == me.id:
         return await reply(update, why_no_target(update, f"Ответь командой {cmd} на сообщение соперника или напиши {cmd} @юз"))
     if not cooldown((kind, me.id), 30):
         return await reply(update, "Подожди немного ⏳")
     touch(me)
-    title = "⚔️ дуэль профилей" if kind == "duel" else "🎲 кости"
+    title = {"duel": "🔫 дуэль на выстрелах", "rps": "✊ камень-ножницы-бумага", "prof": "🪪 дуэль профилей",
+             "dice": "🎲 кости"}[kind]
     await _send(context.bot, update.effective_chat.id,
                 f"{link(other.id, disp(other))}, {link(me.id, disp(me))} вызывает тебя: {title}!\n"
                 f"Принять вызов? Время на ответ: {CHALLENGE_SEC // 60} мин.",
@@ -99,7 +101,7 @@ async def send_challenge(update, context, kind):
 async def on_challenge_btn(update, context):
     q = update.callback_query
     p = (q.data or "").split(":")
-    if len(p) != 6 or p[1] not in ("duel", "dice") or not p[2].isdigit() or not p[3].isdigit() or p[4] not in ("y", "n"):
+    if len(p) != 6 or p[1] not in ("duel", "dice", "rps", "prof") or not p[2].isdigit() or not p[3].isdigit() or p[4] not in ("y", "n"):
         return await q.answer()
     kind, a, b, ans, ts = p[1], int(p[2]), int(p[3]), p[4], int(p[5]) if p[5].isdigit() else 0
     if q.from_user.id != b:
@@ -125,12 +127,21 @@ async def on_challenge_btn(update, context):
         return await _send(context.bot, q.message.chat_id,
                            f"🙅 {link(b, rb['name'])} отказался от вызова {link(a, ra['name'])}.")
     await q.answer()
-    if kind == "duel":
+    if kind == "dice":
+        await run_dice(context.bot, q.message.chat_id, a, b)
+    elif kind == "prof":
         await run_duel(context.bot, q.message.chat_id, a, b)
     else:
-        await run_dice(context.bot, q.message.chat_id, a, b)
+        from handlers.duelgames import start
+        await start(context.bot, "shoot" if kind == "duel" else "rps", q.message.chat_id, a, b)
 
 
 @group_only
 async def cmd_duel(update, context):
-    await send_challenge(update, context, "duel")
+    low = (update.effective_message.text or "").lower()
+    await send_challenge(update, context, "prof" if "профил" in low else "duel")
+
+
+@group_only
+async def cmd_rps(update, context):
+    await send_challenge(update, context, "rps")

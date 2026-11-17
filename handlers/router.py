@@ -16,7 +16,7 @@ from core.utils import is_owner, norm, touch, urow
 from database.db import db
 from handlers.basic import cmd_help
 from handlers.chat_admin import cmd_admin_log, cmd_rules, cmd_set_rules, cmd_set_welcome, cmd_weekstat
-from handlers.duel import cmd_duel
+from handlers.duel import cmd_duel, cmd_rps
 from handlers.clans import handle_clan_text
 from handlers.mafia import handle_mafia_text
 from handlers.casino import handle_casino_text
@@ -56,7 +56,7 @@ USER_ALIASES = {
     "месяц": cmd_month, "топ месяца": cmd_month,
     "квесты": cmd_quests, "задания": cmd_quests,
     "рейтинг викторины": cmd_quiztop, "топ викторины": cmd_quiztop,
-    "дуэль": cmd_duel, "кости": cmd_dice, "слоты": cmd_slots,
+    "дуэль": cmd_duel, "кнб": cmd_rps, "камень": cmd_rps, "кости": cmd_dice, "слоты": cmd_slots,
     "монетка": cmd_coin, "монета": cmd_coin,
     "баланс": cmd_balance, "кошелек": cmd_balance, "кошелёк": cmd_balance,
     "подарки": cmd_gifts, "мои подарки": cmd_gifts, "рынок": cmd_market, "маркет": cmd_market,
@@ -244,6 +244,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     and msg.reply_to_message.from_user.id != user.id
                     and not msg.reply_to_message.from_user.is_bot)
     events = add_counted(user.id, msg.message_id, is_reply, text)
+    if events is not None and len(text) >= 60:
+        from services.xp import bump
+        bump(user.id, "longmsg")
     if is_reply:
         rel_add(user.id, msg.reply_to_message.from_user.id, 1)
     count_words(text)

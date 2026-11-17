@@ -34,35 +34,69 @@ def give_xp(uid, amount):
     return ev
 
 
+QUEST_COLS = ("cnt", "replies", "plays", "repgiven", "shifts", "biz", "casino", "duelw", "feed", "longmsg", "stock", "mafia")
+
+
 def bump(uid, col, n=1):
-    assert col in ("cnt", "replies", "plays", "repgiven")
+    assert col in QUEST_COLS
     db.execute(f"INSERT INTO daily(day,user_id,{col}) VALUES(?,?,?) "
                f"ON CONFLICT(day,user_id) DO UPDATE SET {col}={col}+?",
                (today(), uid, n, n))
     db.commit()
 
 
+async def quest_hit(bot, uid, col, chat_id=None):
+    """Засчитать действие для квестов дня и сразу проверить выполнение."""
+    try:
+        bump(uid, col)
+        await check_quests(bot, uid, chat_id)
+    except Exception:
+        log.exception("quest_hit")
+
+
 def progress(uid, d=None):
     r = db.execute("SELECT * FROM daily WHERE day=? AND user_id=?", (d or today(), uid)).fetchone()
-    if not r:
-        return {"msgs": 0, "replies": 0, "plays": 0, "repgiven": 0}
-    return {"msgs": r["cnt"], "replies": r["replies"], "plays": r["plays"],
-            "repgiven": r["repgiven"]}
+    out = {c: 0 for c in QUEST_COLS}
+    out["msgs"] = 0
+    if r:
+        for c in QUEST_COLS:
+            out[c] = r[c] or 0
+        out["msgs"] = r["cnt"] or 0
+    return out
 
 
-QUEST_TITLES = {
-    "msgs": "Написать {n} сообщений",
-    "replies": "Ответить на {n} сообщений",
-    "plays": "Сыграть в мини-игры ({n} раз)",
-    "repgiven": "Поставить +реп участнику",
+# квест: (название, возможные цели). Каждый день берётся по одному из трёх разделов
+QUEST_POOL = {
+    "talk": {
+        "msgs": ("Написать {n} нормальных сообщений", [30, 50, 80]),
+        "replies": ("Ответить на {n} сообщений других", [5, 10, 15]),
+        "longmsg": ("Написать {n} развёрнутых сообщений (от 60 символов)", [3, 5, 8]),
+    },
+    "game": {
+        "plays": ("Сыграть в мини-игры ({n} раз)", [1, 2, 3]),
+        "casino": ("Сделать {n} ставок в казино", [3, 5, 8]),
+        "duelw": ("Победить в дуэли", [1]),
+        "mafia": ("Сыграть партию в мафию", [1]),
+    },
+    "life": {
+        "shifts": ("Отработать смен: {n}", [1, 2, 3]),
+        "biz": ("Собрать доход с бизнеса", [1]),
+        "feed": ("Покормить питомца", [1]),
+        "stock": ("Купить или продать акции", [1]),
+        "repgiven": ("Поставить +реп участнику", [1]),
+    },
 }
+QUEST_TITLES = {k: v[0] for grp in QUEST_POOL.values() for k, v in grp.items()}
 
 
 def quests_for(d):
+    """Три квеста дня: по одному из разговорных, игровых и бытовых, чтобы дни не повторялись."""
     rng = random.Random(d)
-    types = rng.sample(list(QUEST_TITLES), 3)
-    targets = {"msgs": [30, 50, 80], "replies": [5, 10, 15], "plays": [1, 2, 3], "repgiven": [1]}
-    return [(t, rng.choice(targets[t])) for t in types]
+    out = []
+    for grp in ("talk", "game", "life"):
+        k = rng.choice(list(QUEST_POOL[grp]))
+        out.append((k, rng.choice(QUEST_POOL[grp][k][1])))
+    return out
 
 
 async def check_quests(bot, uid, chat_id=None):

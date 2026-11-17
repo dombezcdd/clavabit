@@ -61,6 +61,8 @@ async def _play(bot, chat, uid, name, game, bet, arg):
         n, col, mult = roulette(kind, num)
         title = f"🎡 Рулетка ({kind}{' ' + str(num) if kind == 'число' else ''})"
         res = f"выпало {n} · {col}"
+    from services.xp import quest_hit
+    await quest_hit(bot, uid, "casino", chat)
     win = bet * mult
     if win:
         chips_add(uid, win)

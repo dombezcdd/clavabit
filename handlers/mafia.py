@@ -334,6 +334,9 @@ async def _run(bot, g):
                 team = "\nТвоя команда: " + (", ".join(esc(x.name) + f" ({ROLES[x.role][0]})" for x in mates) or "ты один(а)")
             await dm(bot, p.uid, f"🎭 Игра началась! Ты — <b>{ROLES[p.role][1]} {ROLES[p.role][0]}</b>.{team}",
                      photo=(lambda r=p.role: role_card(r)), pkey=f"maf_role_{p.role}")
+        from services.xp import quest_hit
+        for p in g.players.values():
+            await quest_hit(bot, p.uid, "mafia", g.chat_id)
         await bot.send_message(g.chat_id, "🎭 Роли разосланы в личку. Первая ночь…", parse_mode=HTML)
         while True:
             # ---------- ночь ----------

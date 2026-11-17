@@ -38,6 +38,7 @@ SECTIONS = {
 
 def _kb():
     rows = [[B(v[0], callback_data=f"adm:{k}")] for k, v in SECTIONS.items()]
+    rows.append([B("🛡 Команды модерации", callback_data="adm:mod")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -223,7 +224,10 @@ async def on_admin_btn(update, context):
     if not is_owner(q.from_user):
         return await q.answer("Только для владельца", show_alert=True)
     sec = (q.data or "").split(":", 1)[-1]
-    if sec in SECTIONS:
+    if sec == "mod":
+        from content.texts import ADMIN_HELP
+        txt, kb = ADMIN_HELP[:3900], InlineKeyboardMarkup([[B("⬅️ Назад", callback_data="adm:back")]])
+    elif sec in SECTIONS:
         title, body = SECTIONS[sec]
         txt = f"{title}\n\n{body}\n\nЦель: ответом на сообщение, @юз или id."
         kb = InlineKeyboardMarkup([[B("⬅️ Назад", callback_data="adm:back")]])

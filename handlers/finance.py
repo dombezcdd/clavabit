@@ -134,6 +134,8 @@ async def _biz_collect(update, me):
     give_coins(me.id, income, commit=False)
     db.execute("UPDATE business SET last_collect=? WHERE user_id=?", (time.time(), me.id))
     db.commit()
+    from services.xp import quest_hit
+    await quest_hit(update.get_bot(), me.id, "biz", update.effective_chat.id)
     await reply(update, f"💰 {link(me.id, disp(me))} собрал(а) доход «{BIZ[b['level'] - 1][0]}»: <b>+{income}</b> {COIN}"
                         + (f"\n{ev}" if ev else "") + f"\nБаланс: {coins_of(me.id)} {COIN}")
     return True
@@ -326,6 +328,8 @@ async def _buy(update, me, name, qty):
     if not ok:
         await reply(update, res)
         return True
+    from services.xp import quest_hit
+    await quest_hit(update.get_bot(), me.id, "stock", update.effective_chat.id)
     await reply(update, f"📥 {link(me.id, disp(me))} купил(а) {qty} шт. <b>{s['sym']}</b> по {s['price']:.2f} "
                         f"за {res} {COIN}. Сегодня вложено {spent_today(me.id)} из {STOCK_DAY_LIMIT}")
     return True
@@ -346,6 +350,8 @@ async def _sell(update, me, name, qty):
         await reply(update, res)
         return True
     net, profit, fee, n = res
+    from services.xp import quest_hit
+    await quest_hit(update.get_bot(), me.id, "stock", update.effective_chat.id)
     await reply(update, f"📤 {link(me.id, disp(me))} продал(а) {n} шт. <b>{s['sym']}</b> по {s['price']:.2f}: "
                         f"+{net} {COIN} (комиссия {fee}). Итог сделки: {'📈 +' if profit >= 0 else '📉 '}{profit} {COIN}")
     return True
