@@ -97,7 +97,7 @@ async def check_quests(bot, uid, chat_id=None):
             log.exception("quest msg")
 
 
-def add_counted(uid, message_id, is_reply):
+def add_counted(uid, message_id, is_reply, text=""):
     d = today()
     yd = (now() - timedelta(days=1)).strftime(FMT)
     u = urow(uid)
@@ -116,8 +116,13 @@ def add_counted(uid, message_id, is_reply):
                "WHERE user_id=?", (streak, best, d, time.time(), uid))
     db.commit()
     bump(uid, "cnt")
-    if (u["total"] + 1) % MSG_COINS_EVERY == 0:
-        give_coins(uid, 1)
+    from core.antispam import is_real_text
+    if text and is_real_text(text):
+        n = (u["coin_msgs"] or 0) + 1
+        db.execute("UPDATE users SET coin_msgs=? WHERE user_id=?", (n, uid))
+        db.commit()
+        if n % MSG_COINS_EVERY == 0:
+            give_coins(uid, 1)
     if is_reply:
         bump(uid, "replies")
     war_add(uid, PTS_MSG)

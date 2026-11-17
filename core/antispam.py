@@ -36,6 +36,22 @@ def is_meaningful(text):
     return True
 
 
+def is_real_text(text):
+    """Строже is_meaningful: только нормальные фразы (для монет): минимум 2 разных слова по 3+ буквы."""
+    t = text.lower().replace("ё", "е")
+    words = re.findall(r"[a-zа-я]{3,}", t)
+    if len(words) < 2 or len(set(words)) < 2 or sum(map(len, words)) < 10:
+        return False
+    good = 0
+    for w in words:
+        if not re.search(r"[аеиоуыэюяaeiouy]", w) or re.search(r"(.)\1{2,}", w):
+            continue
+        if len(set(w)) / len(w) < 0.5:
+            continue
+        good += 1
+    return good >= 2
+
+
 last_ts = {}
 
 

@@ -98,7 +98,7 @@ for _col in ("arank INTEGER DEFAULT 0", "coins INTEGER DEFAULT 0", "duel_w INTEG
              "job TEXT DEFAULT ''", "job_shifts INTEGER DEFAULT 0", "last_work REAL DEFAULT 0",
              "house TEXT DEFAULT ''", "gender TEXT DEFAULT ''", "clan_id INTEGER DEFAULT 0",
              "ztitle TEXT DEFAULT ''", "nick TEXT DEFAULT ''", "city TEXT DEFAULT ''", "bday TEXT DEFAULT ''",
-             "gift_until REAL DEFAULT 0", "jail_until REAL DEFAULT 0", "rob_at REAL DEFAULT 0", "boost_until REAL DEFAULT 0", "sick_until REAL DEFAULT 0", "immune_until REAL DEFAULT 0", "infect_at REAL DEFAULT 0"):
+             "gift_until REAL DEFAULT 0", "jail_until REAL DEFAULT 0", "rob_at REAL DEFAULT 0", "boost_until REAL DEFAULT 0", "sick_until REAL DEFAULT 0", "immune_until REAL DEFAULT 0", "infect_at REAL DEFAULT 0", "coin_msgs INTEGER DEFAULT 0"):
     try:
         db.execute("ALTER TABLE users ADD COLUMN " + _col)
     except sqlite3.OperationalError:
