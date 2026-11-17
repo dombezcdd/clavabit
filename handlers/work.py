@@ -17,7 +17,7 @@ from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
 from services.virus import is_sick
 from services.xp import give_xp
-from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
+from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, PAY_GROW_MAX, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
 from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
@@ -226,7 +226,7 @@ async def life_job_my(update, context):
     sh = row["job_shifts"] or 0
     nx = career_next(sh)
     grow = f"до «{nx[1]}» ещё {nx[0] - sh}" if nx else "высшая должность"
-    extra = [f"стаж +{min(sh, PAY_GROW_CAP) * 100 // PAY_GROW_CAP}%"]
+    extra = [f"стаж +{int(min(sh, PAY_GROW_CAP) / PAY_GROW_CAP * PAY_GROW_MAX * 100)}%"]
     if bonus:
         extra.append(f"дом +{bonus}%")
     text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\n\n"

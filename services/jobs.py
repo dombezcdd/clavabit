@@ -35,10 +35,10 @@ JOBS = {   # ключ: (название, награда (масштаб иск�
 
 
 HOUSES = {  # ключ: (название, цена, бонус к зарплате %, ссылка для кнопки «Посмотреть» или "")
-    "комната":  ("Комната", 300, 5, ""),
-    "квартира": ("Квартира", 1000, 10, ""),
-    "дом":      ("Дом", 3000, 20, ""),
-    "особняк":  ("Особняк", 10000, 35, ""),
+    "комната":  ("Комната", 300, 2, ""),
+    "квартира": ("Квартира", 1000, 4, ""),
+    "дом":      ("Дом", 3000, 8, ""),
+    "особняк":  ("Особняк", 10000, 14, ""),
 }
 
 
@@ -98,7 +98,7 @@ def shown_cd(cd):
 
 def job_pay(row):
     name, base, cd, req = JOBS[row["job"]]
-    mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP + house_bonus_pct(row["user_id"]) / 100 \
+    mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP * PAY_GROW_MAX + house_bonus_pct(row["user_id"]) / 100 \
         + clan_bonus_pct(row["user_id"]) / 100
     if has_boost(row):
         mult += BOOST_PCT / 100
@@ -107,7 +107,8 @@ def job_pay(row):
     return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE))
 
 
-PAY_GROW_CAP = 200     # на стольких сменах зарплата вырастает вдвое (+100%)
+PAY_GROW_CAP = 200     # на стольких сменах бонус за стаж достигает максимума
+PAY_GROW_MAX = 0.35    # максимум бонуса за стаж: +35%
 CD_GROW_CAP = 200      # на стольких сменах пауза между сменами вырастает на CD_GROW_HOURS
 CD_GROW_HOURS = 2      # «пара часов» (до масштаба смены)
 XP_PER_SHIFT = 5       # опыта за смену; с ростом стажа больше (+1 за каждые 25 смен)
