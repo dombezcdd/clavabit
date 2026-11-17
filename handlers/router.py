@@ -20,6 +20,7 @@ from handlers.duel import cmd_duel
 from handlers.clans import handle_clan_text
 from handlers.mafia import handle_mafia_text
 from handlers.casino import handle_casino_text
+from handlers.admin import handle_admin_text
 from handlers.court import handle_court_text
 from handlers.coop import handle_coop_text
 from handlers.finance import handle_finance_text
@@ -127,6 +128,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not user or user.is_bot or not msg.text:
         return
     if chat.type == "private":
+        if is_owner(user) and await handle_admin_text(update, context, msg.text.strip().lower(), msg.text.strip()):
+            return
         return await private_menu(update)
     if chat.id not in ALLOWED:
         return
@@ -184,6 +187,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await handle_court_text(update, context, cmd_low, text):
+        return
+
+    if await handle_admin_text(update, context, cmd_low, text):
         return
 
     if await handle_casino_text(update, context, cmd_low, text):
