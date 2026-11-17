@@ -19,7 +19,6 @@ from services.economy import COIN, give_coins
 from services.xp import bump
 
 TEXT_MAX = 30
-BDAY_GIFT = 50
 WEATHER_WORDS = {0: "☀️ ясно", 1: "🌤 малооблачно", 2: "⛅️ переменная облачность", 3: "☁️ пасмурно",
                  45: "🌫 туман", 48: "🌫 туман", 51: "🌦 морось", 53: "🌦 морось", 55: "🌦 морось",
                  61: "🌧 дождь", 63: "🌧 дождь", 65: "🌧 сильный дождь", 71: "🌨 снег", 73: "🌨 снег",
@@ -143,7 +142,7 @@ async def _bday(update, me, v):
         return True
     val = f"{int(m.group(1)):02d}.{int(m.group(2)):02d}" + (f".{m.group(3)}" if m.group(3) else "")
     db.execute("UPDATE users SET bday=? WHERE user_id=?", (val, me.id)); db.commit()
-    await reply(update, f"🎂 День рождения: <b>{val}</b>. Бот поздравит и подарит {BDAY_GIFT} {COIN}")
+    await reply(update, f"🎂 День рождения: <b>{val}</b>. Бот поздравит тебя в этот день")
     return True
 
 
@@ -231,12 +230,11 @@ async def bday_tick(bot):
     key = n.strftime("%d.%m")
     rows = db.execute("SELECT user_id,name,bday FROM users WHERE bday LIKE ?", (key + "%",)).fetchall()
     for r in rows:
-        give_coins(r["user_id"], BDAY_GIFT)
         age = ""
         if len(r["bday"]) == 10:
             age = f" Ему/ей исполняется {n.year - int(r['bday'][6:])}!"
         try:
             await bot.send_message(CHAT_ID, f"🎂🎉 Сегодня день рождения у {link(r['user_id'], r['name'])}!{age}\n"
-                                            f"Поздравляем! Подарок: +{BDAY_GIFT} {COIN}", parse_mode="HTML")
+                                            "Поздравляем! 🥳", parse_mode="HTML")
         except Exception:
             log.exception("bday")

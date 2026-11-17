@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Профиль и топы: /me, /top, /week, /month, /quiztop, /quests."""
 
+import time
+
 from config import QUEST_ALL_BONUS_XP, QUEST_XP
 from core.helpers import group_only, reply, target_user
 from core.utils import esc, today, touch, urow
@@ -10,8 +12,34 @@ from services.stats import fmt_top, month_start, top_rows, week_start
 from services.xp import QUEST_TITLES, progress, quests_for
 
 
+_prof_hits = {}      # uid -> [время запросов]
+_prof_block = {}     # uid -> до какого времени игнорируем
+PROF_FREE, PROF_WINDOW, PROF_BLOCK = 2, 60, 60
+
+
+def _profile_gate(uid):
+    """-> None (можно) | 0 (молча игнорировать) | секунды (сказать один раз «позже»)"""
+    now_ = time.time()
+    until = _prof_block.get(uid, 0)
+    if until > now_:
+        return 0
+    hits = [t for t in _prof_hits.get(uid, []) if now_ - t < PROF_WINDOW]
+    if len(hits) >= PROF_FREE:
+        _prof_block[uid] = now_ + PROF_BLOCK
+        _prof_hits[uid] = []
+        return PROF_BLOCK
+    hits.append(now_)
+    _prof_hits[uid] = hits
+    return None
+
+
 async def send_profile(update, context, u):
     from handlers.finance import _send_photo
+    gate = _profile_gate(update.effective_user.id)
+    if gate == 0:
+        return
+    if gate:
+        return await reply(update, f"⏳ Слишком часто. Попробуйте позже, через {gate} сек")
     from services.profile import profile_view
     touch(u)
     try:
