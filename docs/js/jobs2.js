@@ -65,7 +65,7 @@ function cook(done) {
 
 /* ===== сварщик ===== */
 function welder(done) {
-  const N = 6; let i = 0, total = 0, pos = 0, dir = 1, speed = 70, zone = 0, zw = 22, raf = 0, last = performance.now(), lock = false;
+  const N = 6; let i = 0, total = 0, pos = 0, dir = 1, speed = 70, zone = 0, zw = 22, raf = 0, last = performance.now(), lock = false, hist = [];
   const box = el("div", "q"); stage.appendChild(box);
   const track = el("div", "weld"); track.style.cssText = "position:relative;height:46px;background:#2a2540;border-radius:12px;margin:26px 0;overflow:hidden";
   const zdiv = el("div"); zdiv.style.cssText = "position:absolute;top:0;bottom:0;background:#2ecc71;opacity:.75";
@@ -76,10 +76,16 @@ function welder(done) {
   function newZone() { zw = Math.max(9, 22 - i * 2.4); zone = rnd(8, 92 - zw); zdiv.style.left = zone + "%"; zdiv.style.width = zw + "%"; speed = 62 + i * 14; lock = false;
     hint.textContent = "Шов " + (i + 1) + " из " + N; setTime(1 - i / N); }
   function loop(now) { const dt = Math.min(0.05, (now - last) / 1000) * FAST; last = now;
-    pos += dir * speed * dt; if (pos > 100) { pos = 100; dir = -1; } if (pos < 0) { pos = 0; dir = 1; } mk.style.left = pos + "%"; raf = requestAnimationFrame(loop); }
-  btn.onclick = () => {
+    pos += dir * speed * dt; if (pos > 100) { pos = 100; dir = -1; } if (pos < 0) { pos = 0; dir = 1; } mk.style.left = pos + "%";
+    hist.push([now, pos]); if (hist.length > 30) hist.shift(); raf = requestAnimationFrame(loop); }
+  /* позиция искры в момент самого нажатия (а не момента, когда браузер дошёл до обработчика) */
+  function posAt(t) { for (let k = hist.length - 1; k >= 0; k--) if (hist[k][0] <= t) return hist[k][1]; return pos; }
+  btn.style.touchAction = "manipulation";
+  btn.onpointerdown = (ev) => {
+    ev.preventDefault();
     if (lock) return; lock = true;
-    const c = zone + zw / 2, d = Math.abs(pos - c), pts = d <= zw / 2 ? 100 - d / (zw / 2) * 25 : Math.max(0, 55 - (d - zw / 2) * 3);
+    const p0 = posAt(ev.timeStamp || performance.now());
+    const c = zone + zw / 2, d = Math.abs(p0 - c), pts = d <= zw / 2 ? 100 - d / (zw / 2) * 25 : Math.max(0, 55 - (d - zw / 2) * 3);
     total += pts; pill.textContent = Math.round(total / N); seam.textContent = pts > 70 ? "Ровный шов! ✨" : pts > 30 ? "Сойдёт…" : "Непровар 😬";
     haptic(pts > 50 ? "success" : "error"); i++;
     if (i >= N) { cancelAnimationFrame(raf); return setTimeout(() => done(Math.round(total / N)), 600 / FAST); }
