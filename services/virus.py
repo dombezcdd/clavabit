@@ -9,7 +9,7 @@ from core.utils import urow
 from database.db import db
 
 SICK_HOURS = 12
-IMMUNE_HOURS = 6           # иммунитет после лечения
+IMMUNE_HOURS = 8           # иммунитет после лечения
 INFECT_CD = 3600           # пауза между попытками заразить, сек
 INFECT_CHANCE = 0.55
 SICK_PAY_MULT = 0.75      # болезнь забирает 25% зарплаты
@@ -21,6 +21,15 @@ BOOST_PCT = 5
 
 def is_sick(row):
     return bool(row) and (row["sick_until"] or 0) > time.time()
+
+
+def sick_since(row):
+    return (row["sick_until"] or 0) - SICK_HOURS * 3600
+
+
+def sick_for_shift(row, shift_started):
+    """Болезнь режет только ту смену, которая началась после заражения (удар приходится на следующую зарплату)."""
+    return is_sick(row) and sick_since(row) <= shift_started
 
 
 def has_boost(row):

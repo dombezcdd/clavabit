@@ -10,7 +10,7 @@ from core.utils import level_of, link, urow
 from database.db import db
 from services.clans import clan_bonus_pct
 from services.relations import is_married, pair_of, partner_of
-from services.virus import BOOST_PCT, SICK_PAY_MULT, has_boost, is_sick
+from services.virus import BOOST_PCT, SICK_PAY_MULT, has_boost, is_sick, sick_for_shift
 
 
 # ============================ ЖИЗНЬ: РАБОТЫ, БРАК, ДОМА, ПИТОМЦЫ ============================
@@ -100,15 +100,22 @@ def shown_cd(cd):
     return cd * SHIFT_SCALE
 
 
-def job_pay(row):
+def job_pay(row, shift_started=None):
     name, base, cd, req = JOBS[row["job"]]
     mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP * PAY_GROW_MAX + house_bonus_pct(row["user_id"]) / 100 \
         + clan_bonus_pct(row["user_id"]) / 100
     if has_boost(row):
         mult += BOOST_PCT / 100
-    if is_sick(row):
+    if (sick_for_shift(row, shift_started) if shift_started is not None else is_sick(row)):
         mult *= SICK_PAY_MULT
-    return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE))
+    pay_mult = 1.0
+    try:
+        from services.court import WANTED_PAY_MULT, is_wanted
+        if is_wanted(row["user_id"]):
+            pay_mult = WANTED_PAY_MULT
+    except Exception:
+        pass
+    return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE * pay_mult))
 
 
 PAY_GROW_CAP = 200     # на стольких сменах бонус за стаж достигает максимума

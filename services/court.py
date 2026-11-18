@@ -16,14 +16,17 @@ ROB_LEAVE = 30               # после кражи у жертвы остаё�
 ROB_PCT = (0.02, 0.04)       # доля баланса жертвы
 ROB_JAIL_CHANCE = 0.25       # шанс попасть в тюрьму при провале
 ROB_JAIL_MIN = 20
-ROB_DAY_MAX = 3              # попыток в сутки у одного вора
+ROB_DAY_MAX = 1              # попыток в сутки у одного вора
+ROB_LOOT = (5, 10)           # добыча за успешное ограбление
+WANTED_HOURS = 3             # после успешной кражи вор «в розыске»: зарплата ниже
+WANTED_PAY_MULT = 0.8
 ROB_GUARD = 3600             # после ограбления жертву час не трогают
 ROB_FINE_PCT = 0.10          # штраф при провале: 10% баланса вора (от 15 до 100), просто списывается
 FILE_WINDOW = 30 * 60          # сколько после ограбления можно подать в суд
 TRIAL_MIN = 5                  # минут идёт голосование
 MIN_VOTES = 3
 JAIL_HOURS = 1
-BAIL = 100
+BAIL = 60
 LAWYER_FEE = 40
 LAWYER_WEIGHT = 1.5
 
@@ -53,9 +56,10 @@ def rob(thief_id, victim_id):
     if db.execute("SELECT 1 FROM crimes WHERE kind='rob' AND criminal=? AND victim=? AND ts>?",
                   (thief_id, victim_id, day_start)).fetchone():
         return "same", 0
-    last = db.execute("SELECT MAX(ts) m FROM crimes WHERE kind='rob' AND victim=?", (victim_id,)).fetchone()["m"] or 0
-    if last + ROB_GUARD > time.time():
-        return "guard", int(last + ROB_GUARD - time.time())
+    taken = db.execute("SELECT 1 FROM crimes WHERE kind='rob' AND victim=? AND criminal!=? AND ts>?",
+                       (victim_id, thief_id, day_start)).fetchone()
+    if taken:
+        return "taken", 0
     state_set(key, int(state_get(key) or 0) + 1)
     db.execute("UPDATE users SET rob_at=? WHERE user_id=?", (time.time(), thief_id))
     from core.utils import today as _today
@@ -76,9 +80,10 @@ def rob(thief_id, victim_id):
             g = random.choice(guards)
             return "pet", (fine, g["name"], g["kind"])
         return "caught", (fine, jailed)
-    amount = min(ROB_MAX, max(5, int(v["coins"] * random.uniform(*ROB_PCT))), max(0, v["coins"] - ROB_LEAVE))
+    amount = min(random.randint(*ROB_LOOT), max(0, v["coins"] - ROB_LEAVE))
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (amount, victim_id))
     db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (amount, thief_id))
+    state_set(f"wanted_{thief_id}", int(time.time() + WANTED_HOURS * 3600))
     cur = db.execute("INSERT INTO crimes(kind,criminal,victim,amount,ts,status) VALUES('rob',?,?,?,?,'open')",
                      (thief_id, victim_id, amount, time.time()))
     db.commit()
@@ -187,3 +192,8 @@ def pay_bail(uid):
     db.execute("UPDATE users SET coins=coins-?, jail_until=0 WHERE user_id=?", (BAIL, uid))
     db.commit()
     return True, BAIL
+
+
+def is_wanted(uid):
+    from database.state import state_get
+    return int(state_get(f"wanted_{uid}") or 0) > time.time()

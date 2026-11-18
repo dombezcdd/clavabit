@@ -13,7 +13,7 @@ from core.logger import log
 from core.ranks import has_rank
 from core.utils import disp, esc, link, touch, urow
 from database.db import db
-from services.court import (BAIL, FILE_WINDOW, JAIL_HOURS, LAWYER_FEE, LAWYER_WEIGHT, MIN_VOTES, ROB_CD, ROB_JAIL_MIN, TRIAL_MIN,
+from services.court import (BAIL, FILE_WINDOW, JAIL_HOURS, LAWYER_FEE, LAWYER_WEIGHT, MIN_VOTES, ROB_CD, ROB_JAIL_MIN, TRIAL_MIN, WANTED_HOURS, WANTED_PAY_MULT,
                             active_case_of, case_by_id, close_case, hire_lawyer, jail_left, open_case, pay_bail, rob,
                             tally, vote)
 from services.economy import COIN
@@ -73,11 +73,11 @@ async def _rob(update, context, me, text):
     elif code == "cd":
         await reply(update, f"Полиция ещё ищет тебя. Следующая попытка через {fmt_minutes(data // 60 + 1)} ⏳")
     elif code == "limit":
-        await reply(update, f"🚔 На сегодня хватит: не больше {data} попыток краж в сутки. Приходи завтра")
+        await reply(update, f"🚔 Попытка кражи доступна раз в сутки. Приходи завтра")
     elif code == "same":
         await reply(update, f"{who} ты уже грабил(а) за последние сутки. Выбери другую жертву")
-    elif code == "guard":
-        await reply(update, f"🛡 {who} только что ограбили, рядом полиция. Подожди {fmt_minutes(data // 60 + 1)}")
+    elif code == "taken":
+        await reply(update, f"🛡 {who} уже ограбили сегодня, второго вора полиция не пропустит. Выбери другую жертву")
     elif code == "poor":
         await reply(update, f"У {who} почти ничего нет (меньше {data} {COIN}). Не стоит рисковать")
     elif code == "broke":
@@ -96,7 +96,8 @@ async def _rob(update, context, me, text):
         cid, amount = data
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("⚖️ Подать в суд", callback_data=f"crt:file:{cid}")]])
         await reply(update, f"🕶 {me_l} ограбил(а) {who} на <b>{amount}</b> {COIN}!\n"
-                            f"{who}, ты можешь подать в суд в течение {FILE_WINDOW // 60} минут", reply_markup=kb)
+                            f"{who}, ты можешь подать в суд в течение {FILE_WINDOW // 60} минут\n"
+                            f"🚨 Вор в розыске {WANTED_HOURS} ч: зарплата на {int((1 - WANTED_PAY_MULT) * 100)}% меньше", reply_markup=kb)
     return True
 
 

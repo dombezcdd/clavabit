@@ -15,7 +15,7 @@ from services.court import jail_left
 from services.clans import PTS_SHIFT, war_add
 from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
-from services.virus import is_sick
+from services.virus import is_sick, sick_for_shift
 from services.xp import give_xp
 from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, PAY_GROW_MAX, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
@@ -126,7 +126,7 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
         return                                  # задание уже закрыто (двойное нажатие)
     if row["job"] not in JOBS or t["job"] != row["job"]:
         return                                  # профессию сменили: за прежнее задание не платим
-    pay = job_pay(row)
+    pay = job_pay(row, t["created"])
     note = ""
     r = random.random()
     if r < 0.10:
@@ -149,8 +149,10 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     war_add(uid, PTS_SHIFT)
     from services.xp import quest_hit
     await quest_hit(bot, uid, "shifts", chat_id)
-    if is_sick(row):
-        note += "\n🤒 Болезнь: зарплата вдвое меньше. Лечение: «аптека»"
+    if sick_for_shift(row, t["created"]):
+        note += "\n🤒 Болезнь: зарплата на 25% меньше. Лечение: «аптека»"
+    elif is_sick(row):
+        note += "\n🤒 Тебя заразили во время смены: эта зарплата без штрафа, а следующая будет на 25% меньше. Лечение: «аптека»"
     xp_n = shift_xp(shifts)
     for _ev in give_xp(uid, xp_n):
         note += "\n" + _ev
