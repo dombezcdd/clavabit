@@ -13,7 +13,7 @@ from core.logger import log
 from core.ranks import has_rank
 from core.utils import disp, esc, link, touch, urow
 from database.db import db
-from services.court import (BAIL, FILE_WINDOW, JAIL_HOURS, LAWYER_FEE, LAWYER_WEIGHT, MIN_VOTES, ROB_CD, TRIAL_MIN,
+from services.court import (BAIL, FILE_WINDOW, JAIL_HOURS, LAWYER_FEE, LAWYER_WEIGHT, MIN_VOTES, ROB_CD, ROB_JAIL_MIN, TRIAL_MIN,
                             active_case_of, case_by_id, close_case, hire_lawyer, jail_left, open_case, pay_bail, rob,
                             tally, vote)
 from services.economy import COIN
@@ -80,8 +80,13 @@ async def _rob(update, context, me, text):
         await reply(update, f"🛡 {who} только что ограбили, рядом полиция. Подожди {fmt_minutes(data // 60 + 1)}")
     elif code == "poor":
         await reply(update, f"У {who} почти ничего нет (меньше {data} {COIN}). Не стоит рисковать")
+    elif code == "broke":
+        await reply(update, f"На дело нужен запас: хотя бы {data} {COIN} на штраф, если поймают")
     elif code == "caught":
-        await reply(update, f"🚨 {me_l} попытался(ась) ограбить {who}, но охрана поймала. Штраф {data} {COIN}")
+        fine, jailed = data
+        await reply(update, f"🚨 {me_l} попытался(ась) ограбить {who}, но охрана поймала.\n"
+                            f"Штраф {fine} {COIN} уходит пострадавшему"
+                            + (f"\n🔒 Плюс {ROB_JAIL_MIN} минут в тюрьме (залог: «залог»)" if jailed else ""))
     else:
         cid, amount = data
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("⚖️ Подать в суд", callback_data=f"crt:file:{cid}")]])

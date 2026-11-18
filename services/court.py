@@ -9,11 +9,16 @@ from database.db import db
 
 ROB_CD = 3 * 3600
 ROB_CHANCE = 0.35
-ROB_MIN_VICTIM = 40
-ROB_MAX = 300
+ROB_MIN_VICTIM = 60          # у жертвы должно быть хотя бы столько
+ROB_MIN_THIEF = 30           # у вора должен быть залог на штраф
+ROB_MAX = 150
+ROB_LEAVE = 30               # после кражи у жертвы остаётся не меньше
+ROB_PCT = (0.04, 0.08)       # доля баланса жертвы
+ROB_JAIL_CHANCE = 0.25       # шанс попасть в тюрьму при провале
+ROB_JAIL_MIN = 20
 ROB_DAY_MAX = 3              # попыток в сутки у одного вора
 ROB_GUARD = 3600             # после ограбления жертву час не трогают
-ROB_FAIL_FINE = 15
+ROB_FINE_PCT = 0.10          # штраф при провале: 10% баланса вора (от 15 до 100), уходит жертве
 FILE_WINDOW = 30 * 60          # сколько после ограбления можно подать в суд
 TRIAL_MIN = 5                  # минут идёт голосование
 MIN_VOTES = 3
@@ -37,6 +42,8 @@ def rob(thief_id, victim_id):
         return "cd", int(left)
     if not v or (v["coins"] or 0) < ROB_MIN_VICTIM:
         return "poor", ROB_MIN_VICTIM
+    if (t["coins"] or 0) < ROB_MIN_THIEF:
+        return "broke", ROB_MIN_THIEF
     from core.utils import today
     from database.state import state_get, state_set
     key = f"rob_{today()}_{thief_id}"
@@ -52,10 +59,15 @@ def rob(thief_id, victim_id):
     state_set(key, int(state_get(key) or 0) + 1)
     db.execute("UPDATE users SET rob_at=? WHERE user_id=?", (time.time(), thief_id))
     if random.random() > ROB_CHANCE:
-        db.execute("UPDATE users SET coins=MAX(0, coins-?) WHERE user_id=?", (ROB_FAIL_FINE, thief_id))
+        fine = min(100, max(15, int((t["coins"] or 0) * ROB_FINE_PCT)), t["coins"] or 0)
+        db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (fine, thief_id))
+        db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (fine, victim_id))      # штраф уходит пострадавшему
+        jailed = random.random() < ROB_JAIL_CHANCE
+        if jailed:
+            db.execute("UPDATE users SET jail_until=? WHERE user_id=?", (time.time() + ROB_JAIL_MIN * 60, thief_id))
         db.commit()
-        return "caught", ROB_FAIL_FINE
-    amount = min(ROB_MAX, max(10, int(v["coins"] * random.uniform(0.05, 0.10))))
+        return "caught", (fine, jailed)
+    amount = min(ROB_MAX, max(8, int(v["coins"] * random.uniform(*ROB_PCT))), max(0, v["coins"] - ROB_LEAVE))
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (amount, victim_id))
     db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (amount, thief_id))
     cur = db.execute("INSERT INTO crimes(kind,criminal,victim,amount,ts,status) VALUES('rob',?,?,?,?,'open')",
