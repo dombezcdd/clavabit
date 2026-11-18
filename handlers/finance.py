@@ -216,6 +216,7 @@ def _caption():
 def _list_kb():
     syms = [s["sym"] for s in db.execute("SELECT sym FROM stocks ORDER BY rowid").fetchall()]
     rows = [[InlineKeyboardButton(x, callback_data=f"stk:o:{x}") for x in syms[i:i + 4]] for i in range(0, len(syms), 4)]
+    rows.append([InlineKeyboardButton("📡 Табло LIVE", callback_data="lv:new:all")])
     rows.append([InlineKeyboardButton("💼 Портфель", callback_data="stk:p"),
                  InlineKeyboardButton("🏆 Топ инвесторов", callback_data="stk:t")])
     return InlineKeyboardMarkup(rows)

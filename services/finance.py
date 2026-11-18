@@ -209,3 +209,24 @@ def sell_stock(uid, s, qty):
                (uid, profit, profit))
     db.commit()
     return True, (net, profit, fee, qty)
+
+
+_last_micro = [0.0]
+MICRO_MAX = 0.06          # живая цена не уходит дальше ±6% от цены последнего тика
+
+
+def micro_tick(min_gap=4.0):
+    """Мелкие движения цены между тиками (пока кто-то смотрит табло). Цены настоящие: по ним идут сделки."""
+    now_ = time.time()
+    if now_ - _last_micro[0] < min_gap:
+        return False
+    _last_micro[0] = now_
+    for s in db.execute("SELECT * FROM stocks").fetchall():
+        h = db.execute("SELECT price FROM stock_hist WHERE sym=? ORDER BY ts DESC LIMIT 1", (s["sym"],)).fetchone()
+        anchor = h["price"] if h else s["base"]
+        step = random.gauss(0, s["vol"] * 0.06) + 0.05 * (anchor - s["price"]) / anchor
+        new = s["price"] * (1 + max(-0.01, min(0.01, step)))
+        new = round(min(anchor * (1 + MICRO_MAX), max(anchor * (1 - MICRO_MAX), new)), 2)
+        db.execute("UPDATE stocks SET price=?, updated=? WHERE sym=?", (new, now_, s["sym"]))
+    db.commit()
+    return True

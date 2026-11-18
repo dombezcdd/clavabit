@@ -20,6 +20,7 @@ from handlers.duel import cmd_duel, cmd_rps
 from handlers.clans import handle_clan_text
 from handlers.mafia import handle_mafia_text
 from handlers.casino import handle_casino_text
+from handlers.live import handle_live_text
 from handlers.admin import handle_admin_text
 from handlers.court import handle_court_text
 from handlers.coop import handle_coop_text
@@ -190,6 +191,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await handle_admin_text(update, context, cmd_low, text):
+        return
+
+    if await handle_live_text(update, context, cmd_low, text):
         return
 
     if await handle_casino_text(update, context, cmd_low, text):
