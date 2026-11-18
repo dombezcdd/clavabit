@@ -11,14 +11,14 @@ ROB_CD = 3 * 3600
 ROB_CHANCE = 0.35
 ROB_MIN_VICTIM = 60          # у жертвы должно быть хотя бы столько
 ROB_MIN_THIEF = 30           # у вора должен быть залог на штраф
-ROB_MAX = 150
+ROB_MAX = 60
 ROB_LEAVE = 30               # после кражи у жертвы остаётся не меньше
-ROB_PCT = (0.04, 0.08)       # доля баланса жертвы
+ROB_PCT = (0.02, 0.04)       # доля баланса жертвы
 ROB_JAIL_CHANCE = 0.25       # шанс попасть в тюрьму при провале
 ROB_JAIL_MIN = 20
 ROB_DAY_MAX = 3              # попыток в сутки у одного вора
 ROB_GUARD = 3600             # после ограбления жертву час не трогают
-ROB_FINE_PCT = 0.10          # штраф при провале: 10% баланса вора (от 15 до 100), уходит жертве
+ROB_FINE_PCT = 0.10          # штраф при провале: 10% баланса вора (от 15 до 100), просто списывается
 FILE_WINDOW = 30 * 60          # сколько после ограбления можно подать в суд
 TRIAL_MIN = 5                  # минут идёт голосование
 MIN_VOTES = 3
@@ -61,13 +61,12 @@ def rob(thief_id, victim_id):
     if random.random() > ROB_CHANCE:
         fine = min(100, max(15, int((t["coins"] or 0) * ROB_FINE_PCT)), t["coins"] or 0)
         db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (fine, thief_id))
-        db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (fine, victim_id))      # штраф уходит пострадавшему
         jailed = random.random() < ROB_JAIL_CHANCE
         if jailed:
             db.execute("UPDATE users SET jail_until=? WHERE user_id=?", (time.time() + ROB_JAIL_MIN * 60, thief_id))
         db.commit()
         return "caught", (fine, jailed)
-    amount = min(ROB_MAX, max(8, int(v["coins"] * random.uniform(*ROB_PCT))), max(0, v["coins"] - ROB_LEAVE))
+    amount = min(ROB_MAX, max(5, int(v["coins"] * random.uniform(*ROB_PCT))), max(0, v["coins"] - ROB_LEAVE))
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (amount, victim_id))
     db.execute("UPDATE users SET coins=coins+? WHERE user_id=?", (amount, thief_id))
     cur = db.execute("INSERT INTO crimes(kind,criminal,victim,amount,ts,status) VALUES('rob',?,?,?,?,'open')",

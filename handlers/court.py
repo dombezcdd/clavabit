@@ -85,7 +85,7 @@ async def _rob(update, context, me, text):
     elif code == "caught":
         fine, jailed = data
         await reply(update, f"🚨 {me_l} попытался(ась) ограбить {who}, но охрана поймала.\n"
-                            f"Штраф {fine} {COIN} уходит пострадавшему"
+                            f"Штраф {fine} {COIN}"
                             + (f"\n🔒 Плюс {ROB_JAIL_MIN} минут в тюрьме (залог: «залог»)" if jailed else ""))
     else:
         cid, amount = data
