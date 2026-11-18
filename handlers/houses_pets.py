@@ -8,7 +8,7 @@ from core.utils import disp, esc, link, today, urow
 from database.db import db
 from handlers.common import life_send, own_kb
 from services.economy import coins_of, give_coins
-from services.jobs import HOUSES, PETS, PET_FEED_COST, PET_MAX, PET_RUNAWAY_DAYS, my_pets
+from services.jobs import HOUSES, PET_GUARD, PET_GUARD_MAX, PETS, PET_FEED_COST, PET_MAX, PET_RUNAWAY_DAYS, my_pets
 from services.relations import uname
 
 
@@ -38,7 +38,8 @@ async def life_pet_shop(update, context):
              f"Без еды {PET_RUNAWAY_DAYS} дней питомец уходит.\n"]
     btns = []
     for k, (name, price, em) in PETS.items():
-        lines.append(f"{em} {name}: {price} славКоин")
+        gd = PET_GUARD.get(k, 0)
+        lines.append(f"{em} {name}: {price} славКоин" + (f" · 🛡 {int(gd * 100)}% отбить вора" if gd else ""))
         btns.append([InlineKeyboardButton(f"{em} {name} · {price} славКоин", callback_data=f"life:pet:{me.id}:{k}")])
     await life_send(update, context, "\n".join(lines), kb=own_kb(btns))
 
@@ -52,6 +53,12 @@ async def life_pet_my(update, context):
         em = PETS[p["kind"]][2] if p["kind"] in PETS else "🐾"
         fed = "накормлен сегодня" if p["fed_day"] == today() else "голодный"
         lines.append(f"{em} {esc(p['name'])} ({esc(uname(p['owner']))}): {fed}")
+    miss = 1.0
+    for p in pets:
+        if p["fed_day"] == today() and p["kind"] in PET_GUARD:
+            miss *= 1 - PET_GUARD[p["kind"]]
+    prot = int(min(PET_GUARD_MAX, 1 - miss) * 100)
+    lines.append(f"\n🛡 Защита от грабителей сейчас: <b>{prot}%</b>" + ("" if prot else " (накорми питомцев, голодные не защищают)"))
     await reply(update, "\n".join(lines) + "\n\nПереименовать: «назвать питомца Барсик»")
 
 

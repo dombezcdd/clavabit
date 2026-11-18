@@ -82,6 +82,11 @@ async def _rob(update, context, me, text):
         await reply(update, f"У {who} почти ничего нет (меньше {data} {COIN}). Не стоит рисковать")
     elif code == "broke":
         await reply(update, f"На дело нужен запас: хотя бы {data} {COIN} на штраф, если поймают")
+    elif code == "pet":
+        from services.jobs import PETS
+        fine, pname, pk = data
+        await reply(update, f"{PETS[pk][2]} Питомец <b>{esc(pname)}</b> защитил хозяина: {me_l} не смог(ла) ограбить {who}.\n"
+                            f"Штраф {fine} {COIN}")
     elif code == "caught":
         fine, jailed = data
         await reply(update, f"🚨 {me_l} попытался(ась) ограбить {who}, но охрана поймала.\n"

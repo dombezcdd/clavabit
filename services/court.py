@@ -58,13 +58,23 @@ def rob(thief_id, victim_id):
         return "guard", int(last + ROB_GUARD - time.time())
     state_set(key, int(state_get(key) or 0) + 1)
     db.execute("UPDATE users SET rob_at=? WHERE user_id=?", (time.time(), thief_id))
-    if random.random() > ROB_CHANCE:
+    from core.utils import today as _today
+    from services.jobs import PET_GUARD, PET_GUARD_MAX, my_pets
+    guards = [p for p in my_pets(victim_id) if p["fed_day"] == _today() and p["kind"] in PET_GUARD]
+    miss = 1.0
+    for g in guards:
+        miss *= 1 - PET_GUARD[g["kind"]]
+    pet_win = guards and random.random() < min(PET_GUARD_MAX, 1 - miss)
+    if pet_win or random.random() > ROB_CHANCE:
         fine = min(100, max(15, int((t["coins"] or 0) * ROB_FINE_PCT)), t["coins"] or 0)
         db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (fine, thief_id))
         jailed = random.random() < ROB_JAIL_CHANCE
         if jailed:
             db.execute("UPDATE users SET jail_until=? WHERE user_id=?", (time.time() + ROB_JAIL_MIN * 60, thief_id))
         db.commit()
+        if pet_win:
+            g = random.choice(guards)
+            return "pet", (fine, g["name"], g["kind"])
         return "caught", (fine, jailed)
     amount = min(ROB_MAX, max(5, int(v["coins"] * random.uniform(*ROB_PCT))), max(0, v["coins"] - ROB_LEAVE))
     db.execute("UPDATE users SET coins=coins-? WHERE user_id=?", (amount, victim_id))
