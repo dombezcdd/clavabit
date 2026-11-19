@@ -51,7 +51,7 @@ def _status(g):
     a, b = g.ids
     if g.kind == "shoot":
         def line(u):
-            return f"{link(u, g.name[u])}: {'❤️' * g.hp[u]}{'🖤' * (HP - g.hp[u])}  патроны {'🔸' * g.ammo[u]}{'▫️' * (AMMO_MAX - g.ammo[u])}"
+            return (f"👤 {link(u, g.name[u])}\n    ❤️ жизни: {'❤️' * g.hp[u]}{'🖤' * (HP - g.hp[u])}   🔫 патроны: {'🔸' * g.ammo[u]}{'▫️' * (AMMO_MAX - g.ammo[u])}")
         return line(a) + "\n" + line(b)
     return f"{link(a, g.name[a])}: {g.wins[a]}  ·  {link(b, g.name[b])}: {g.wins[b]}  (до 2 побед)"
 
@@ -62,9 +62,16 @@ def _ready(g):
 
 def _text(g):
     title = "🔫 <b>Дуэль на выстрелах</b>" if g.kind == "shoot" else "✊ <b>Камень-ножницы-бумага</b>"
-    hint = ("Выбирай скрытно: 🔫 выстрел (нужен патрон), 🛡 укрытие (две подряд не работают), 🔄 перезарядка (+1 патрон)."
-            if g.kind == "shoot" else "Выбирай кнопкой, соперник не видит твой ход.")
-    return (f"{title} · раунд {g.round}\n{_status(g)}\n\n{g.log}\n{hint}\n{_ready(g)} · {ROUND_SEC} сек")
+    if g.kind == "shoot":
+        hint = ("<b>Твой ход</b> (выбирай скрытно, соперник не видит):\n"
+                "🔫 Выстрел: нужен патрон, отнимает 1 ❤️ у соперника\n"
+                "🛡 Укрытие: защищает от выстрела (два раза подряд не работает)\n"
+                "🔄 Перезарядка: +1 патрон")
+    else:
+        hint = "<b>Твой ход:</b> выбери кнопкой, соперник не видит твой выбор."
+    last = f"📋 <b>Что было в прошлом раунде:</b>\n{g.log}\n\n" if g.log and g.log.strip() else ""
+    return (f"{title} · раунд {g.round}\n\n{_status(g)}\n\n{last}{hint}\n\n"
+            f"Выбрали: {_ready(g)}\n⏱ {ROUND_SEC} сек на ход")
 
 
 async def _show(bot, g, text, kb):
@@ -114,17 +121,16 @@ async def _end(bot, g, text, win=None):
 def _resolve_shoot(g):
     a, b = g.ids
     ch = {u: g.choice.get(u) for u in g.ids}
-    notes = []
-    blocked, shots = {}, {}
+    why = {}
     for u in g.ids:
         c = ch[u] or "r"
         if ch[u] is None:
-            notes.append(f"{esc(g.name[u])} не успел и перезаряжается")
+            why[u] = "⏰ не успел выбрать, значит перезаряжается"
         if c == "b" and g.prev[u] == "b":
-            notes.append(f"{esc(g.name[u])}: укрытие дважды подряд не держит")
+            why[u] = "⚠️ укрытие два раза подряд не работает, ход потерян"
             c = "x"
         if c == "s" and g.ammo[u] < 1:
-            notes.append(f"{esc(g.name[u])}: осечка, патронов нет")
+            why[u] = "⚠️ патронов нет, выстрела не вышло, ход потерян"
             c = "x"
         ch[u] = c
     for u in g.ids:
@@ -132,19 +138,26 @@ def _resolve_shoot(g):
             g.ammo[u] = min(AMMO_MAX, g.ammo[u] + 1)
         elif ch[u] == "s":
             g.ammo[u] -= 1
+    res = {}
     for u in g.ids:
         o = b if u == a else a
         if ch[u] == "s":
             if ch[o] == "b":
-                notes.append(f"{esc(g.name[u])} стреляет, но {esc(g.name[o])} в укрытии")
+                res[u] = f"🔫 стреляет, но {esc(g.name[o])} в укрытии: мимо"
             else:
                 g.hp[o] -= 1
-                notes.append(f"💥 {esc(g.name[u])} попадает в {esc(g.name[o])}")
+                res[u] = f"💥 стреляет и попадает: у {esc(g.name[o])} −1 ❤️"
+        elif ch[u] == "b":
+            res[u] = "🛡 прячется в укрытии"
+        elif ch[u] == "r":
+            res[u] = "🔄 перезаряжается (+1 патрон)"
     for u in g.ids:
         g.prev[u] = ch[u] if ch[u] != "x" else ""
-    names = {"s": "стреляет", "b": "прячется", "r": "перезаряжается", "x": "теряет ход"}
-    head = " · ".join(f"{esc(g.name[u])} {names[ch[u]]}" for u in g.ids)
-    return head + "\n" + "\n".join(notes)
+    out = []
+    for u in g.ids:
+        parts = ([why[u]] if u in why else []) + ([res[u]] if ch[u] != "x" and u in res else [])
+        out.append(f"• {esc(g.name[u])}: " + "; ".join(parts))
+    return "\n".join(out)
 
 
 def _resolve_rps(g):

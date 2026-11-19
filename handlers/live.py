@@ -93,9 +93,54 @@ def _kb(sess):
         x = sess["mode"]
         rows = [[B("🟢 Купить 1", callback_data=f"lv:{sid}:b1:{x}"), B("🟢 ×5", callback_data=f"lv:{sid}:b5:{x}")],
                 [B("🔴 Продать 1", callback_data=f"lv:{sid}:s1:{x}"), B("🔴 Всё", callback_data=f"lv:{sid}:sa:{x}")],
+                [B("🎞 GIF графика", callback_data=f"lv:{sid}:gif:{x}")],
                 [B("⬅️ Табло", callback_data=f"lv:{sid}:all"), B("💼 Портфель", callback_data=f"lv:{sid}:pf")]]
     rows.append([B("⏹ Стоп", callback_data=f"lv:{sid}:stop")])
     return InlineKeyboardMarkup(rows)
+
+
+GIF_MOVE = 1.2       # % за ~30 секунд, после которого шлём GIF
+GIF_GAP = 45         # не чаще раза в N секунд на чат
+
+
+async def _send_gif(bot, sess, s, force=False):
+    """GIF: акция взлетает или падает. Ошибки не мешают табло."""
+    try:
+        pts = list(sess["pts"].get(s["sym"], []))
+        if len(pts) < 3:
+            return False
+        chg = (pts[-1] - pts[0]) / pts[0] * 100 if pts[0] else 0.0
+        import io
+        from services.stock_gif import make_gif
+        data = await asyncio.to_thread(make_gif, s["sym"], s["name"], pts, pts[-1], chg)
+        if not data:
+            return False
+        bio = io.BytesIO(data)
+        bio.name = "stock.gif"
+        word = "🚀 взлетает" if chg >= 0 else "📉 падает"
+        await bot.send_animation(sess["chat"], bio, caption=f"{word}: <b>{s['sym']}</b> {s['price']:.2f} {COIN} ({chg:+.1f}%)",
+                                 parse_mode=HTML, read_timeout=25, write_timeout=25)
+        sess["gif_t"] = time.time()
+        return True
+    except Exception as e:
+        log.warning("live gif: %r", e)
+        return False
+
+
+async def _auto_gif(bot, sess):
+    if time.time() - sess.get("gif_t", 0) < GIF_GAP:
+        return
+    best, bc = None, 0.0
+    for s in _stocks():
+        pts = list(sess["pts"].get(s["sym"], []))[-7:]
+        if len(pts) < 5 or not pts[0]:
+            continue
+        c = (pts[-1] - pts[0]) / pts[0] * 100
+        if abs(c) > abs(bc):
+            best, bc = s, c
+    if best is not None and abs(bc) >= GIF_MOVE:
+        sess["gif_t"] = time.time()
+        await _send_gif(bot, sess, best)
 
 
 async def _edit(bot, sess, text, kb):
@@ -122,6 +167,7 @@ async def _loop(bot, sess):
             for s in _stocks():
                 sess["pts"].setdefault(s["sym"], deque(maxlen=40)).append(s["price"])
             await _edit(bot, sess, _render(sess), _kb(sess))
+            await _auto_gif(bot, sess)
             await asyncio.sleep(STEP_SEC)
     except asyncio.CancelledError:
         pass
@@ -216,6 +262,11 @@ async def on_live_btn(update, context):
     s = db.execute("SELECT * FROM stocks WHERE sym=?", (sym,)).fetchone()
     if not s:
         return await q.answer()
+    if act == "gif":
+        if time.time() - sess.get("gif_t", 0) < 15:
+            return await q.answer("Подожди пару секунд", show_alert=False)
+        await q.answer("Рисую GIF…")
+        return await _send_gif(context.bot, sess, s, True)
     if act in ("b1", "b5"):
         qty = 1 if act == "b1" else 5
         ok, res = buy_stock(me.id, s, qty)
