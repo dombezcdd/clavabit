@@ -188,14 +188,22 @@ async def _send_photo(target, data, caption, reply_markup=None, key=None, **kw):
             else:
                 state_set("fid_" + key, "")
     if fid != "timeout":
-        try:
-            photo = data() if callable(data) else data
-            m = await go(photo, UPLOAD_T)
-            if key and getattr(m, "photo", None):
-                state_set("fid_" + key, m.photo[-1].file_id)
-            return m
-        except Exception as ex:
-            log.warning("send_photo (%s): %r", key or "без ключа", ex)
+        for attempt in (1, 2):
+            try:
+                photo = data() if callable(data) else data
+                if not callable(data) and hasattr(photo, "seek"):
+                    photo.seek(0)
+                m = await go(photo, UPLOAD_T)
+                if key and getattr(m, "photo", None):
+                    state_set("fid_" + key, m.photo[-1].file_id)
+                return m
+            except Exception as ex:
+                log.warning("send_photo (%s) попытка %d: %r", key or "без ключа", attempt, ex)
+                # серверная ошибка Telegram/прокси (500, 502) обычно разовая: одна быстрая повторная попытка; таймаут не повторяем
+                if attempt == 1 and isinstance(ex, NetworkError) and not isinstance(ex, TimedOut):
+                    await asyncio.sleep(1.5)
+                    continue
+                break
     if isinstance(target, tuple):
         return await target[0].send_message(target[1], caption, parse_mode=HTML, reply_markup=reply_markup)
     return await target.reply_text(caption, parse_mode=HTML, reply_markup=reply_markup)
