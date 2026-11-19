@@ -278,8 +278,8 @@ async def on_stock_btn(update, context):
 
     async def show(text, kb):
         try:
-            if q.message.photo:
-                await context.bot.send_message(q.message.chat_id, text, parse_mode=HTML, reply_markup=kb)
+            if q.message.photo:          # сообщение с картинкой: меняем подпись, а не шлём новое
+                await q.edit_message_caption(caption=text[:1000], parse_mode=HTML, reply_markup=kb)
             else:
                 await q.edit_message_text(text, parse_mode=HTML, reply_markup=kb)
         except BadRequest:
@@ -297,16 +297,15 @@ async def on_stock_btn(update, context):
         total = sum(int(r["price"] * r["qty"]) for r in rows)
         txt = "💼 <b>Портфель</b> · " + esc(disp(me)) + "\n" + "\n".join(
             f"{r['sym']}: {r['qty']} шт. · {int(r['price'] * r['qty'])} {COIN}" for r in rows) + f"\nВсего: {total} {COIN}"
-        return await context.bot.send_message(q.message.chat_id, txt, parse_mode=HTML)
+        return await show(txt, _list_kb())
     if act == "t":
         rows = db.execute("SELECT i.profit, u.name FROM investors i JOIN users u ON u.user_id=i.user_id "
                           "ORDER BY i.profit DESC LIMIT 5").fetchall()
         if not rows:
             return await q.answer("Пока нет закрытых сделок", show_alert=True)
         await q.answer()
-        return await context.bot.send_message(
-            q.message.chat_id, "🏆 <b>Топ инвесторов</b>\n" + "\n".join(
-                f"{i}. {esc(r['name'] or '?')}: {r['profit']:+d}" for i, r in enumerate(rows, 1)), parse_mode=HTML)
+        return await show("🏆 <b>Топ инвесторов</b>\n" + "\n".join(
+            f"{i}. {esc(r['name'] or '?')}: {r['profit']:+d}" for i, r in enumerate(rows, 1)), _list_kb())
     s = find_stock(p[2]) if len(p) > 2 else None
     if not s:
         return await q.answer("Компания не найдена", show_alert=True)
