@@ -6,7 +6,17 @@ const FAST = Number(new URLSearchParams(location.search).get("fast")) || 1;     
 const tg = window.Telegram && window.Telegram.WebApp;
 if (tg) { try { tg.ready(); tg.expand(); tg.disableVerticalSwipes && tg.disableVerticalSwipes(); tg.setHeaderColor && tg.setHeaderColor("#1b1530"); tg.setBackgroundColor && tg.setBackgroundColor("#1b1530"); } catch (e) {} }
 const q = new URLSearchParams(location.search);
-const sid = ((tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || q.get("sid") || "dem00000000").replace(/[^a-z0-9]/gi, "");
+function startParam() {   // параметр запуска: из Telegram, из tgWebAppStartParam или из tgWebAppData (на некоторых клиентах start_param теряется)
+  try {
+    const u = tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param; if (u) return u;
+    const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+    const d = h.get("tgWebAppStartParam") || q.get("tgWebAppStartParam"); if (d) return d;
+    const raw = h.get("tgWebAppData"); if (raw) { const sp = new URLSearchParams(raw).get("start_param"); if (sp) return sp; }
+    if (tg && tg.initData) { const sp = new URLSearchParams(tg.initData).get("start_param"); if (sp) return sp; }
+  } catch (e) {}
+  return "";
+}
+const sid = (startParam() || q.get("sid") || "dem00000000").replace(/[^a-z0-9]/gi, "");
 const demo = sid.startsWith("dem");
 const $ = id => document.getElementById(id);
 const stage = $("stage"), bar = $("barFill"), pill = $("pill"), hint = $("hint");

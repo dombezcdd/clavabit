@@ -25,4 +25,5 @@ function jobMenu() {
 }
 if (sid === "hub" || (demo && q.get("hub") !== null)) hub();
 else if (q.get("game")) { const g = { mono: startMonopoly, g2048: start2048, mines: startMines, snake: startSnake }[q.get("game")]; if (g) openGame(g); else hub(); }
+else if (demo) hub();
 else runJob(sid.slice(0, 3));

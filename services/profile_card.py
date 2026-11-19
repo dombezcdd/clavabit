@@ -11,6 +11,17 @@ W, H = 900, 520
 BG, PANEL, TXT, SUB = (22, 24, 33), (33, 36, 49), (240, 242, 248), (150, 156, 175)
 
 
+def _clean(text):
+    """Оставляем только символы, которые умеет рисовать шрифт карточки (латиница, кириллица, цифры, знаки)."""
+    import unicodedata
+    out = []
+    for ch in unicodedata.normalize("NFKC", text or ""):
+        o = ord(ch)
+        if ch.isalnum() and (o < 0x0250 or 0x0400 <= o <= 0x04FF) or ch in " .,-_'!?@#&()+·:":
+            out.append(ch)
+    return " ".join("".join(out).split())
+
+
 def _accent(uid):
     h = (uid * 2654435761 % 360) / 360
     r, g, b = colorsys.hsv_to_rgb(h, 0.55, 0.95)
@@ -27,6 +38,10 @@ def profile_card(info, avatar=None):
     """info: dict(uid, name, sub, level, title, xp_pct, xp_left, tiles[(подпись, значение)], foot[...])"""
     from PIL import Image, ImageDraw, ImageOps
     acc = info["accent"] = _accent(info["uid"])
+    info["name"] = _clean(info["name"]) or "Игрок"
+    info["sub"] = _clean(info["sub"]) or "участник"
+    info["title"] = _clean(info["title"]) or ""
+    info["foot"] = [_clean(x) for x in info["foot"]]
     im = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(im)
     d.rectangle((0, 0, W, 10), fill=acc)
