@@ -22,6 +22,7 @@ from handlers.mafia import handle_mafia_text
 from handlers.casino import handle_casino_text
 from handlers.live import handle_live_text
 from handlers.vip import handle_vip_text
+from handlers.passcmd import handle_pass_text
 from handlers.admin import handle_admin_text
 from handlers.court import handle_court_text
 from handlers.coop import handle_coop_text
@@ -209,6 +210,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await handle_vip_text(update, context, cmd_low, text):
+        return
+
+    if await handle_pass_text(update, context, cmd_low, text):
         return
 
     if await handle_finance_text(update, context, cmd_low, text):

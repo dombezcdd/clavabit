@@ -24,6 +24,7 @@ from handlers.admin import on_admin_btn
 from handlers.duelgames import on_duelgame_btn
 from handlers.court import on_court_btn
 from handlers.coop import on_coop_btn
+from handlers.passcmd import on_pass_btn
 from handlers.finance import on_stock_btn
 from handlers.virus import on_virus_btn
 from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell, on_market_btn
@@ -159,5 +160,6 @@ def main():
     app.add_handler(CallbackQueryHandler(on_challenge_btn, pattern=r"^ch:"))
     app.add_handler(CallbackQueryHandler(on_duelgame_btn, pattern=r"^dg:"))
     app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
+    app.add_handler(CallbackQueryHandler(on_pass_btn, pattern=r"^ps:"))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)

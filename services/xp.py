@@ -107,6 +107,14 @@ def vip_quests_for(d):
     return rng.sample(pool, 2)
 
 
+def _pass(uid, kind):
+    try:
+        from services.battlepass import PTS_ALL, PTS_QUEST, PTS_VIP_QUEST, pass_add
+        pass_add(uid, {"q": PTS_QUEST, "a": PTS_ALL, "v": PTS_VIP_QUEST}[kind])
+    except Exception:
+        log.exception("pass_add")
+
+
 async def check_quests(bot, uid, chat_id=None):
     d = today()
     u = urow(uid)
@@ -123,6 +131,7 @@ async def check_quests(bot, uid, chat_id=None):
             db.execute("UPDATE users SET quest_pts=quest_pts+1 WHERE user_id=?", (uid,))
             db.commit()
             done.add(qid)
+            _pass(uid, "q")
             out.append(f"✅ {link(uid, u['name'])} выполнил квест: "
                        f"{QUEST_TITLES[qid].format(n=target)} (+{QUEST_XP} опыта)")
             out += give_xp(uid, QUEST_XP)
@@ -135,6 +144,7 @@ async def check_quests(bot, uid, chat_id=None):
                     db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, key))
                     db.commit()
                     done.add(key)
+                    _pass(uid, "v")
                     out.append(f"👑 {link(uid, u['name'])} выполнил VIP-квест: "
                                f"{QUEST_TITLES[qid].format(n=target)} (+{VIP_QUEST_XP} опыта)")
                     out += give_xp(uid, VIP_QUEST_XP)
@@ -143,6 +153,7 @@ async def check_quests(bot, uid, chat_id=None):
     if len({x for x in done if not x.startswith("V") and x != "ALL"}) >= 3 and "ALL" not in done:
         db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, "ALL"))
         db.commit()
+        _pass(uid, "a")
         out.append(f"🏅 {link(uid, u['name'])} выполнил ВСЕ квесты дня! (+{QUEST_ALL_BONUS_XP} опыта)")
         out += give_xp(uid, QUEST_ALL_BONUS_XP)
     if out:
