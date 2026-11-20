@@ -106,9 +106,15 @@ GIF_GAP = 45         # не чаще раза в N секунд на чат
 async def _send_gif(bot, sess, s, force=False):
     """GIF: акция взлетает или падает. Ошибки не мешают табло."""
     try:
-        pts = list(sess["pts"].get(s["sym"], []))
-        if len(pts) < 3:
-            return False
+        pts = [float(x) for x in sess["pts"].get(s["sym"], []) if x]
+        if len(pts) < 2:
+            pts = [float(s["prev"] or s["price"]), float(s["price"])]
+        if len(pts) < 12:                     # мало истории: плавно дорисовываем линию между точками
+            ext = []
+            for a, b in zip(pts, pts[1:]):
+                for k in range(6):
+                    ext.append(a + (b - a) * k / 6)
+            pts = ext + [pts[-1]]
         chg = (pts[-1] - pts[0]) / pts[0] * 100 if pts[0] else 0.0
         import io
         from services.stock_gif import make_gif
@@ -137,7 +143,7 @@ async def _gif_cmd(update, context, sym=None):
     best, bc, bp = None, -1.0, None
     for x in stocks:
         pts = (history(x["sym"]) or [])[-30:] + [x["price"]]
-        if len(pts) < 3 or not pts[0]:
+        if len(pts) < 2 or not pts[0]:
             continue
         c = (pts[-1] - pts[0]) / pts[0] * 100
         if abs(c) > bc:
