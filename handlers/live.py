@@ -127,20 +127,27 @@ async def _send_gif(bot, sess, s, force=False):
         return False
 
 
-async def _auto_gif(bot, sess):
-    if time.time() - sess.get("gif_t", 0) < GIF_GAP:
-        return
-    best, bc = None, 0.0
-    for s in _stocks():
-        pts = list(sess["pts"].get(s["sym"], []))[-7:]
-        if len(pts) < 5 or not pts[0]:
+async def _gif_cmd(update, context, sym=None):
+    """«биржа лайв»: GIF самой сильной акции (взлёт или падение) или указанной."""
+    init_stocks()
+    micro_tick(0)
+    stocks = _stocks()
+    if sym:
+        stocks = [x for x in stocks if x["sym"] == sym]
+    best, bc, bp = None, -1.0, None
+    for x in stocks:
+        pts = (history(x["sym"]) or [])[-30:] + [x["price"]]
+        if len(pts) < 3 or not pts[0]:
             continue
         c = (pts[-1] - pts[0]) / pts[0] * 100
-        if abs(c) > abs(bc):
-            best, bc = s, c
-    if best is not None and abs(bc) >= GIF_MOVE:
-        sess["gif_t"] = time.time()
-        await _send_gif(bot, sess, best)
+        if abs(c) > bc:
+            best, bc, bp = x, abs(c), (pts, c)
+    if best is None:
+        return await reply(update, "Пока мало данных по акциям, попробуй чуть позже")
+    chat = update.effective_chat.id
+    sess = {"chat": chat, "pts": {best["sym"]: bp[0]}}
+    if not await _send_gif(context.bot, sess, best):
+        await reply(update, "Не получилось отправить GIF, попробуй ещё раз")
 
 
 async def _edit(bot, sess, text, kb):
@@ -167,7 +174,6 @@ async def _loop(bot, sess):
             for s in _stocks():
                 sess["pts"].setdefault(s["sym"], deque(maxlen=40)).append(s["price"])
             await _edit(bot, sess, _render(sess), _kb(sess))
-            await _auto_gif(bot, sess)
             await asyncio.sleep(STEP_SEC)
     except asyncio.CancelledError:
         pass
@@ -204,6 +210,16 @@ async def handle_live_text(update, context, low, text):
     if update.effective_chat.id not in ALLOWED:
         return False
     words = low.split()
+    if words[:2] == ["биржа", "лайв"] or words[:2] == ["биржа", "live"]:
+        touch(update.effective_user)
+        sym = None
+        if len(words) > 2:
+            f = find_stock(words[2])
+            sym = f["sym"] if f else None
+            if not f:
+                return await reply(update, "Нет такой компании. Список тикеров: «биржа»") or True
+        await _gif_cmd(update, context, sym)
+        return True
     if not words or words[0] not in ("табло", "следить", "слежка", "трейдинг") or len(words) > 2:
         return False
     touch(update.effective_user)
