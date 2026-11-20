@@ -97,4 +97,13 @@ async def cmd_quests(update, context):
         lines.append(f"{mark} {QUEST_TITLES[qid].format(n=target)} "
                      f"({min(prog[qid], target)}/{target})")
     lines.append(f"\nНаграда: +{QUEST_XP} опыта за квест, +{QUEST_ALL_BONUS_XP} за все три.")
+    from services.vip import VIP_QUEST_XP, is_vip
+    if is_vip(uid):
+        from services.xp import vip_quests_for
+        lines.append("\n👑 <b>VIP-квесты</b>")
+        for qid, target in vip_quests_for(d):
+            mark = "✅" if ("V" + qid) in done else "▫️"
+            lines.append(f"{mark} {QUEST_TITLES[qid].format(n=target)} ({min(prog[qid], target)}/{target}) · +{VIP_QUEST_XP} опыта")
+    else:
+        lines.append("\n👑 С VIP есть 2 особых квеста: «вип»")
     await reply(update, "\n".join(lines))

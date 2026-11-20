@@ -99,6 +99,14 @@ def quests_for(d):
     return out
 
 
+def vip_quests_for(d):
+    """Два особых квеста для VIP: другие показатели, цель из самых высоких."""
+    rng = random.Random(d + "vip")
+    reg = {k for k, _ in quests_for(d)}
+    pool = [(k, max(v[1])) for grp in QUEST_POOL.values() for k, v in grp.items() if k not in reg]
+    return rng.sample(pool, 2)
+
+
 async def check_quests(bot, uid, chat_id=None):
     d = today()
     u = urow(uid)
@@ -118,7 +126,21 @@ async def check_quests(bot, uid, chat_id=None):
             out.append(f"✅ {link(uid, u['name'])} выполнил квест: "
                        f"{QUEST_TITLES[qid].format(n=target)} (+{QUEST_XP} опыта)")
             out += give_xp(uid, QUEST_XP)
-    if len(done) >= 3 and "ALL" not in done:
+    try:
+        from services.vip import VIP_QUEST_XP, is_vip
+        if is_vip(uid):
+            for qid, target in vip_quests_for(d):
+                key = "V" + qid
+                if key not in done and prog[qid] >= target:
+                    db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, key))
+                    db.commit()
+                    done.add(key)
+                    out.append(f"👑 {link(uid, u['name'])} выполнил VIP-квест: "
+                               f"{QUEST_TITLES[qid].format(n=target)} (+{VIP_QUEST_XP} опыта)")
+                    out += give_xp(uid, VIP_QUEST_XP)
+    except Exception:
+        log.exception("vip quests")
+    if len({x for x in done if not x.startswith("V") and x != "ALL"}) >= 3 and "ALL" not in done:
         db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, "ALL"))
         db.commit()
         out.append(f"🏅 {link(uid, u['name'])} выполнил ВСЕ квесты дня! (+{QUEST_ALL_BONUS_XP} опыта)")

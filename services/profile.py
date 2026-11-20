@@ -39,8 +39,13 @@ async def build_profile(bot, row):
     adm = f"🛡 {rank_title(ar)} (админ-ранг {ar})\n" if ar else ""
     extra = "".join(f"{lab}: {esc(row[col])}\n" for lab, col in (("🏷 Звание", "ztitle"), ("📝 Ник", "nick"), ("🏙 Город", "city"))
                     if row[col])
+    try:
+        from services.vip import is_vip
+        crown = " 👑 VIP" if is_vip(uid) else ""
+    except Exception:
+        crown = ""
     return (
-        f"👤 Это пользователь {name}\n{tag}{extra}"
+        f"👤 Это пользователь {name}{crown}\n{tag}{extra}"
         f"👨🏻‍🔧 {role}\n{adm}\n"
         f"▫️ [{lvl}] Ранг: {esc(title_of(lvl))}{nxt}\n"
         f"🕰 Олдство: {ot} ({days} дн. в чате)\n\n"
@@ -166,7 +171,8 @@ async def profile_view(bot, row):
                 av = bytes(await asyncio.wait_for(f.download_as_bytearray(), 6))
         except Exception:
             av = None
-        card = profile_card(dict(uid=uid, name=name, sub=sub or "участник", level=lvl, title=title_of(lvl), xp_pct=pct,
+        from services.vip import is_vip
+        card = profile_card(dict(vip=is_vip(uid), uid=uid, name=name, sub=sub or "участник", level=lvl, title=title_of(lvl), xp_pct=pct,
                                  xp_left=left, tiles=[("славКоин", coins_of(uid)), ("Репутация", row["rep"]),
                                                       ("Серия дней", st), ("В чате", f"{days} дн.")], foot=foot), av)
     except Exception:

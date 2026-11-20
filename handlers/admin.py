@@ -19,6 +19,8 @@ SECTIONS = {
     "money": ("💰 Деньги и очки",
               "• <code>выдать монеты @юз 500</code> (минус — забрать)\n"
               "• <code>выдать фишки @юз 1000</code>\n"
+              "• <code>выдать звёздики @юз 25</code>\n"
+              "• <code>выдать вип @юз 30</code> (дней; -1 снять)\n"
               "• <code>выдать опыт @юз 300</code>\n"
               "• <code>выдать репутацию @юз 5</code>"),
     "health": ("💉 Здоровье",
@@ -154,6 +156,20 @@ async def _give(update, verb, uid, name, what, rest, err):
             return await _need(update, "число")
         chips_add(uid, num, name)
         msg = f"🪙 {who}: {num:+d} фишек. Баланс {chips_of(uid)}"
+    elif what in ("звёздики", "звездики", "звёзд", "звезд", "звёздиков", "звездиков"):
+        if num is None:
+            return await _need(update, "число")
+        from services.vip import STAR, stars_add, stars_of
+        stars_add(uid, num)
+        msg = f"{STAR} {who}: {num:+d} звёздиков. Баланс {stars_of(uid)}"
+    elif what in ("вип", "vip"):
+        import time as _t
+        from services.vip import vip_until
+        days = num if num is not None else 30
+        base = max(vip_until(uid), _t.time())
+        db.execute("UPDATE users SET vip_until=? WHERE user_id=?", (max(0, base + days * 86400) if days >= 0 else 0, uid))
+        db.commit()
+        msg = f"👑 {who}: VIP {days:+d} дн."
     elif what in ("опыт", "xp", "хп"):
         if num is None:
             return await _need(update, "число")

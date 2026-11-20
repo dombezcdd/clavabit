@@ -30,8 +30,10 @@ def claim_bonus(uid, day):
         return 0
     db.execute("UPDATE casino SET bonus_day=? WHERE user_id=?", (day, uid))
     db.commit()
-    chips_add(uid, DAILY_BONUS)
-    return DAILY_BONUS
+    from services.vip import VIP_CASINO_BONUS, is_vip
+    amt = VIP_CASINO_BONUS if is_vip(uid) else DAILY_BONUS
+    chips_add(uid, amt)
+    return amt
 
 
 def top_chips(n=10):

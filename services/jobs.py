@@ -129,7 +129,14 @@ def job_cd_hours(row):
     """Пауза между сменами в часах: базовая + рост со стажем."""
     base = JOBS[row["job"]][2]
     sh = min(row["job_shifts"] or 0, CD_GROW_CAP)
-    return (base + CD_GROW_HOURS * sh / CD_GROW_CAP) * SHIFT_SCALE
+    hours = (base + CD_GROW_HOURS * sh / CD_GROW_CAP) * SHIFT_SCALE
+    try:
+        from services.vip import VIP_CD_MULT, is_vip
+        if is_vip(row["user_id"]):
+            hours *= VIP_CD_MULT
+    except Exception:
+        pass
+    return hours
 
 
 def shift_xp(shifts):

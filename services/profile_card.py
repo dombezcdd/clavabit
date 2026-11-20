@@ -46,6 +46,11 @@ def profile_card(info, avatar=None):
     d = ImageDraw.Draw(im)
     d.rectangle((0, 0, W, 10), fill=acc)
     d.rounded_rectangle((24, 34, W - 24, H - 24), 26, fill=PANEL)
+    if info.get("vip"):
+        gold = (240, 190, 60)
+        d.rounded_rectangle((24, 34, W - 24, H - 24), 26, outline=gold, width=5)
+        d.rounded_rectangle((34, 44, W - 34, H - 34), 20, outline=(150, 115, 35), width=2)
+        d.rectangle((0, 0, W, 10), fill=gold)
     # аватар
     cx, cy, R = 120, 150, 70
     if avatar:
@@ -67,6 +72,10 @@ def profile_card(info, avatar=None):
     x0 = 220
     d.text((x0, 84), info["name"], font=_fit(d, info["name"], _font, 46, W - x0 - 60), fill=TXT)
     d.text((x0, 144), info["sub"], font=_fit(d, info["sub"], _font, 26, W - x0 - 60, False), fill=SUB)
+    if info.get("vip"):
+        bw = d.textlength("VIP", font=_font(22, True))
+        d.rounded_rectangle((W - 60 - bw - 28, 40, W - 40, 76), 10, fill=(240, 190, 60))
+        d.text((W - 60 - bw - 14, 44), "VIP", font=_font(22, True), fill=(40, 30, 5))
     # уровень
     d.text((x0, 188), f"Уровень {info['level']} · {info['title']}", font=_fit(d, info["title"], _font, 26, W - x0 - 60), fill=acc)
     bx0, bx1, by = x0, W - 60, 232

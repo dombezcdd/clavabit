@@ -191,6 +191,12 @@ def rel_add(uid, other, amount, reason="действие"):
         return None
     d = today()
     gain = row["gain"] if row["gain_day"] == d else 0
+    try:
+        from services.vip import VIP_REL_MULT, is_vip
+        if is_vip(uid):
+            amount = int(round(amount * VIP_REL_MULT))
+    except Exception:
+        pass
     add = max(0, min(amount, REL_DAILY_CAP - gain))
     db.execute("UPDATE pairs SET gain=?, gain_day=?, last_action=?, actions=actions+1 WHERE id=?",
                (gain + add, d, time.time(), row["id"]))
