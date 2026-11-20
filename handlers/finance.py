@@ -317,10 +317,16 @@ async def on_stock_btn(update, context):
         if act == "b":
             ok, res = buy_stock(me.id, s, n)
             await q.answer(f"Куплено {n} шт. за {res} {COIN}" if ok else res, show_alert=not ok)
+            if ok:
+                from services.xp import quest_hit
+                await quest_hit(context.bot, me.id, "stock", q.message.chat_id)
         else:
             h = holding(me.id, s["sym"])
             ok, res = sell_stock(me.id, s, n or (h["qty"] if h else 1))
             await q.answer(f"Продано {res[3]} шт.: +{res[0]} {COIN} (итог {res[1]:+d})" if ok else res, show_alert=not ok)
+            if ok:
+                from services.xp import quest_hit
+                await quest_hit(context.bot, me.id, "stock", q.message.chat_id)
         return await show(_card(me.id, s), _card_kb(s["sym"]))
     await q.answer()
 

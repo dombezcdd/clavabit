@@ -6,7 +6,7 @@ import random
 import time
 from datetime import timedelta
 
-from config import CHANNEL, FMT, OWNER_USERNAME, PROMO_MAX_MIN, PROMO_MIN_MIN, QUESTION_TIME, QUIET_HOURS, QUIZ_TIME, SUMMARY_TIME
+from config import ALLOWED, CHANNEL, FMT, OWNER_USERNAME, PROMO_MAX_MIN, PROMO_MIN_MIN, QUESTION_TIME, QUIET_HOURS, QUIZ_TIME, SUMMARY_TIME
 from core.logger import log
 from core.utils import esc, now
 from database.db import db
@@ -72,7 +72,7 @@ async def tick(app):
         state_set("promo_gap", random.randint(PROMO_MIN_MIN, PROMO_MAX_MIN))
         turn = int(float(state_get("promo_turn") or 0))
         state_set("promo_turn", turn + 1)
-        await (post_ad if turn % 2 == 0 else post_invite)(bot)
+        await (post_ad, post_invite, post_coop, post_active)[turn % 4](bot)
 
 
 async def scheduler(app):
@@ -85,8 +85,35 @@ async def scheduler(app):
         await asyncio.sleep(30)
 
 
+async def send_all(bot, text, **kw):
+    """Рассылка во все чаты бота (основной и тестовый). Сбой в одном чате не мешает другим."""
+    sent = 0
+    for cid in sorted(ALLOWED):
+        try:
+            await bot.send_message(cid, text, parse_mode="HTML", disable_web_page_preview=True, **kw)
+            sent += 1
+        except Exception as e:
+            log.warning("рассылка в чат %s не дошла: %r", cid, e)
+    return sent
+
+
+async def post_coop(bot):
+    await send_all(bot, random.choice([
+        "🎬 Хочешь сотрудничать с нами: снимать видео в TikTok и получать награды? Условия: https://telegra.ph/sotrudnichestvo-07-20-4",
+        f"🎬 Снимаешь ТТ? Сотрудничай с нами и получай награды. Подробности: https://telegra.ph/sotrudnichestvo-07-20-4 или пиши @{OWNER_USERNAME}",
+    ]))
+
+
+async def post_active(bot):
+    await send_all(bot, random.choice([
+        "💼 Не забывай про работу: «найти работу», затем смена. Монеты пригодятся на подарки и дома",
+        "🔥 Активничай в чате: за нормальное общение растёт уровень и идут квесты дня. Загляни в «квесты»",
+        "🎮 Скучно? Попробуй «мафия», «дуэль», «казино» или живое «табло» с акциями",
+    ]))
+
+
 async def post_ad(bot):
-    await send_text(bot, random.choice([
+    await send_all(bot, random.choice([
         f"📢 Загляните к нам в канал {esc(CHANNEL)}, там проходят все розыгрыши",
         f"📢 Подписывайтесь на {esc(CHANNEL)}, чтобы не пропустить розыгрыши и новости",
         f"📢 Самое интересное у нас в канале {esc(CHANNEL)}. Подпишитесь, чтобы быть в курсе",
@@ -102,8 +129,8 @@ async def post_invite(bot):
         "🎁 Хотите подарок? Приводите друзей в чат",
     ]) + f"\nПодробности у @{OWNER_USERNAME}\nЧтобы отключить напоминания, напишите /анрег"
     if not ids:
-        await send_text(bot, text)
+        await send_all(bot, text)
         return
     for i in range(0, len(ids), 90):
         hidden = "".join(f'<a href="tg://user?id={u}">\u200b</a>' for u in ids[i:i + 90])
-        await send_text(bot, text + hidden if i == 0 else "🎁" + hidden)
+        await send_all(bot, text + hidden if i == 0 else "🎁" + hidden)

@@ -32,7 +32,8 @@ SECTIONS = {
     "law": ("⚖️ Порядок",
             "• <code>освободить @юз</code> — выпустить из тюрьмы\n"
             "• <code>сбросить паузы @юз</code> — смена, ограбление, заражение\n"
-            "• <code>игрок @юз</code> — сводка по человеку"),
+            "• <code>игрок @юз</code> — сводка по человеку\n"
+            "• <code>рассылка текст</code> — сообщение во все чаты бота"),
 }
 
 
@@ -61,10 +62,19 @@ async def handle_admin_text(update, context, low, text):
     parts = low.split()
     first = parts[0] if parts else ""
     if first.lstrip("/") not in ("админка", "админ-панель", "выдать", "забрать", "вылечить", "освободить",
-                                 "сбросить", "игрок") or not is_owner(me):
+                                 "сбросить", "игрок", "рассылка") or not is_owner(me):
         return False
     if first.lstrip("/") in ("админка", "админ-панель"):
         await update.effective_message.reply_text(_panel(), parse_mode=HTML, reply_markup=_kb())
+        return True
+    if first.lstrip("/") == "рассылка":
+        body = text.split(None, 1)[1].strip() if len(text.split(None, 1)) > 1 else ""
+        if not body:
+            await reply(update, "Напиши текст: <code>рассылка Текст сообщения</code> (уйдёт во все чаты бота)")
+            return True
+        from scheduler import send_all
+        n = await send_all(context.bot, body)
+        await reply(update, f"📣 Рассылка отправлена в чатов: {n} из {len(ALLOWED)}")
         return True
     args = text.split()[1:]
     uid, name, rest, err = resolve_target(update, args)

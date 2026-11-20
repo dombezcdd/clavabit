@@ -124,6 +124,29 @@ async def run_alias(update, context, low, text):
     return False
 
 
+# короткие паузы на «тяжёлые» команды (чтобы не заспамили чат): (начало команды, секунд)
+CD_RULES = (("биржа лайв", 20), ("табло", 20), ("следить", 20), ("слежка", 20), ("биржа", 5), ("акции", 5),
+            ("котировки", 5), ("баланс", 4), ("мой баланс", 4), ("казино", 4), ("слоты", 3), ("рулетка", 3),
+            ("монетка", 3), ("найти работу", 4), ("магазин", 4))
+_CD = {}
+
+
+def _cooldown(uid, low):
+    """True, если пользователь повторяет команду слишком быстро (молча игнорируем)."""
+    for pref, sec in CD_RULES:
+        if low == pref or low.startswith(pref + " "):
+            t = time.time()
+            k = (uid, pref)
+            if t - _CD.get(k, 0) < sec:
+                return True
+            _CD[k] = t
+            if len(_CD) > 5000:
+                for kk in [x for x, v in _CD.items() if t - v > 120]:
+                    _CD.pop(kk, None)
+            return False
+    return False
+
+
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg, user, chat = update.effective_message, update.effective_user, update.effective_chat
     if not msg or not user or user.is_bot or not msg.text:
@@ -174,6 +197,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await handle_rp(update, context, cmd_low[1:].strip(), dot=True)
     if cmd_low in RP:
         return await handle_rp(update, context, cmd_low)
+
+    if _cooldown(user.id, cmd_low):
+        return
 
     if await handle_monopoly_text(update, context, cmd_low):
         return

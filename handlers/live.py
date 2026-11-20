@@ -286,6 +286,9 @@ async def on_live_btn(update, context):
     if act in ("b1", "b5"):
         qty = 1 if act == "b1" else 5
         ok, res = buy_stock(me.id, s, qty)
+        if ok:
+            from services.xp import quest_hit
+            await quest_hit(context.bot, me.id, "stock", chat)
         return await q.answer(f"📥 Куплено {qty} {sym} по {s['price']:.2f}: −{res} {COIN}" if ok else res, show_alert=not ok)
     if act in ("s1", "sa"):
         h = holding(me.id, sym)
@@ -294,5 +297,7 @@ async def on_live_btn(update, context):
         if not ok:
             return await q.answer(res, show_alert=True)
         net, profit, fee, n = res
+        from services.xp import quest_hit
+        await quest_hit(context.bot, me.id, "stock", chat)
         return await q.answer(f"📤 Продано {n} {sym}: +{net} {COIN}, сделка {profit:+d}", show_alert=True)
     await q.answer()
