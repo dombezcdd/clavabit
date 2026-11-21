@@ -6,7 +6,7 @@ import os
 import sys
 
 from telegram import Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, PreCheckoutQueryHandler, filters
 
 from config import BASE, BOT_VERSION, CHAT_ID, OWNER_USERNAME, TEST_CHAT_ID, TOKEN
 from database.state import state_get
@@ -25,6 +25,7 @@ from handlers.duelgames import on_duelgame_btn
 from handlers.court import on_court_btn
 from handlers.coop import on_coop_btn
 from handlers.passcmd import on_pass_btn
+from handlers.payments import cmd_stars, on_pay_btn, on_paid, on_precheckout
 from handlers.finance import on_stock_btn
 from handlers.virus import on_virus_btn
 from handlers.market import cmd_gifts, cmd_market, cmd_sell, cmd_unsell, on_market_btn
@@ -161,5 +162,9 @@ def main():
     app.add_handler(CallbackQueryHandler(on_duelgame_btn, pattern=r"^dg:"))
     app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
     app.add_handler(CallbackQueryHandler(on_pass_btn, pattern=r"^ps:"))
+    app.add_handler(CallbackQueryHandler(on_pay_btn, pattern=r"^pay:"))
+    app.add_handler(PreCheckoutQueryHandler(on_precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, on_paid))
+    app.add_handler(CommandHandler(["stars", "donate", "pay"], cmd_stars))
     app.add_error_handler(on_error)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
