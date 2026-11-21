@@ -74,6 +74,15 @@ async def tick(app):
         state_set("promo_turn", turn + 1)
         await (post_ad, post_invite, post_coop, post_active)[turn % 4](bot)
 
+    # совет мини-игры раз в 30 минут, только если в чате недавно кто-то был (ночью и в пустом чате молчим)
+    if not quiet and time.time() - float(state_get("last_gametip") or 0) >= GAMETIP_MIN * 60:
+        state_set("last_gametip", time.time())
+        recent = db.execute("SELECT COUNT(*) c FROM users WHERE last_seen>?", (time.time() - GAMETIP_MIN * 60,)).fetchone()["c"]
+        if recent >= 2:
+            turn = int(float(state_get("gametip_turn") or 0))
+            state_set("gametip_turn", turn + 1)
+            await send_all(bot, GAME_TIPS[turn % len(GAME_TIPS)])
+
 
 async def scheduler(app):
     await asyncio.sleep(5)
@@ -83,6 +92,17 @@ async def scheduler(app):
         except Exception:
             log.exception("tick")
         await asyncio.sleep(30)
+
+
+GAMETIP_MIN = 30
+GAME_TIPS = (
+    "🕵️ Соберите мафию! Напиши «мафия», нужно от 5 игроков. Есть даже роли из хорроров",
+    "🔫 Дуэль на выстрелах: «дуэль» ответом на сообщение соперника. Ходы скрытые, побеждает хитрейший",
+    "✊ Камень-ножницы-бумага: вызови кого-нибудь на «кнб» ответом на его сообщение",
+    "🎰 Скучно? «казино»: слоты, рулетка и монетка на фишки. Бонус фишек раз в сутки: «бонус фишки»",
+    "📈 Загляни на биржу: «табло» показывает акции в реальном времени, «биржа лайв» шлёт GIF самой горячей акции",
+    "🎟 У тебя есть пасс сезона: «пасс». Выполняй квесты дня и забирай награды",
+)
 
 
 async def send_all(bot, text, **kw):

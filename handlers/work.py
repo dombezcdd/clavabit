@@ -36,19 +36,19 @@ async def life_jobs_find(update, context):
         (locked if miss else avail).append((k, name, pay, cd, miss))
     avail.sort(key=lambda x: x[2])
     locked.sort(key=lambda x: x[2])
+    lines.append(f"✅ Доступно: <b>{len(avail)}</b>  ·  🔒 Закрыто: <b>{len(locked)}</b>")
     if avail:
-        lines.append("✅ <b>Доступно сейчас</b>")
-        for k, name, pay, cd, _ in avail:
-            lines.append(f"• <b>{name}</b> — {shown_pay(pay)} славКоин · раз в {shown_cd(cd):g} ч")
-        lines.append("")
+        best = avail[-1]
+        lines.append(f"Самая выгодная из доступных: <b>{best[1]}</b>, {shown_pay(best[2])} славКоин за смену")
     if locked:
-        lines.append("🔒 <b>Откроется позже</b>")
-        for k, name, pay, cd, miss in locked:
-            lines.append(f"• <b>{name}</b> — {shown_pay(pay)} славКоин · раз в {shown_cd(cd):g} ч\n   нужно: {', '.join(miss)}")
-        lines.append("")
-    lines.append("Выбери профессию кнопкой ниже 👇" if avail else "Пока всё закрыто, поиграй в чате и возвращайся")
+        nxt = locked[0]
+        lines.append(f"Ближайшая цель: <b>{nxt[1]}</b>, нужно {', '.join(nxt[4])}")
+    lines.append("")
+    lines.append("Нажми на профессию: ✅ устроиться, 🔒 покажу, чего не хватает 👇")
     btns = [InlineKeyboardButton(f"{name} · {shown_pay(pay)}", callback_data=f"life:job:{me.id}:{k}")
             for k, name, pay, cd, _ in avail]
+    btns += [InlineKeyboardButton(f"🔒 {name} · {shown_pay(pay)}", callback_data=f"life:job:{me.id}:{k}")
+             for k, name, pay, cd, _ in locked]
     kb = own_kb([btns[i:i + 2] for i in range(0, len(btns), 2)]) if btns else None
     await life_send(update, context, "\n".join(lines), kb=kb)
 

@@ -18,9 +18,16 @@ async def cmd_balance(update, context):
     u = target_user(update) or update.effective_user
     touch(u)
     r = urow(u.id)
-    await reply(update, f"💰 Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b> {COIN}\n"
-                        f"славКоины дают за сообщения (1 за каждые 30) и за работу («найти работу»).\n"
-                        f"Потратить: «магазин»")
+    cap = (f"💰 Баланс {link(u.id, r['name'])}: <b>{r['coins'] or 0}</b> {COIN}\n"
+           f"Дают за общение и за работу («найти работу»). Потратить: «магазин»")
+    try:
+        import asyncio
+        from handlers.finance import _send_photo
+        from services.balance_card import balance_card
+        buf = await asyncio.to_thread(balance_card, r["name"], int(r["coins"] or 0))
+        await _send_photo(update.effective_message, buf, cap)
+    except Exception:
+        await reply(update, cap)
 
 
 @group_only
