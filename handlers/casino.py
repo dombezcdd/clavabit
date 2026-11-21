@@ -47,8 +47,9 @@ async def _play(bot, chat, uid, name, game, bet, arg):
         return f"Ставка от {MIN_BET} до {MAX_BET} фишек", None, True
     if chips_of(uid) < bet:
         return f"Не хватает фишек: у тебя {chips_of(uid)}. Бонус раз в сутки: «бонус фишки»", None, True
-    if time.time() - _last.get(uid, 0) < COOLDOWN:
-        return "Не так быстро, крупье устал 😅", None, True
+    left = COOLDOWN - (time.time() - _last.get(uid, 0))
+    if left > 0:
+        return f"Крупье перемешивает колоду 🃏 Подожди ещё {int(left) + 1} сек.", None, True
     _last[uid] = time.time()
     chips_add(uid, -bet, name)
     if game == "slots":
