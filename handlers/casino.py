@@ -2,6 +2,7 @@
 """Казино: «казино», «слоты 50», «монетка 20 орёл», «рулетка 30 красное»."""
 
 import asyncio
+import io
 import re
 import time
 
@@ -9,6 +10,7 @@ from telegram import InlineKeyboardButton as B, InlineKeyboardMarkup
 
 from config import ALLOWED, HTML
 from core.helpers import reply
+from core.logger import log
 from core.utils import disp, link, today, touch
 from services.casino import (COIN_P, COOLDOWN, DAILY_BONUS, MAX_BET, MIN_BET, SLOT_PAY, chips_add, chips_of, claim_bonus,
                              flip, roulette, spin_slots, top_chips)
@@ -29,13 +31,14 @@ def _menu(uid):
 
 
 def _help(uid):
-    pay = ", ".join(f"{s}{s}{s} ×{m}" for s, m in SLOT_PAY.items())
-    return (f"🎰 <b>Казино</b> · игра на фишки (с славКоинами не связаны), ставка {MIN_BET}–{MAX_BET}\n"
-            f"• «слоты 50»: {pay}; две 🍒: ставка назад\n"
-            f"• «монетка 20 орёл» (или решка): шанс {int(COIN_P * 100)}%, выплата ×2\n"
-            f"• «рулетка 30 красное»: красное/чёрное/чётное/нечётное ×2; «рулетка 30 число 17» ×35 (есть 0 и 00)\n"
-            f"Все ставки на фишки: «фишки» баланс, «бонус фишки» +{DAILY_BONUS} раз в сутки, «топ фишек». "
-            f"Фишки нельзя обменять на славКоины, это просто игра.")
+    pay = " · ".join(f"{s}×{m}" for s, m in SLOT_PAY.items()).replace("7️⃣", "7")
+    return (f"🎰 <b>КАЗИНО</b> · у тебя {chips_of(uid)} 🪙\n"
+            f"Играем на фишки, ставка {MIN_BET}–{MAX_BET}. На славКоины не влияют.\n\n"
+            "🎰 <code>слоты 50</code>\n"
+            "🪙 <code>монетка 20 орёл</code> (или решка)\n"
+            "🎡 <code>рулетка 30 красное</code> (чёрное, чётное, нечётное, <code>число 17</code>)\n\n"
+            f"Слоты: {pay}\n"
+            f"«бонус фишки» +{DAILY_BONUS} раз в сутки · «топ фишек»")
 
 
 async def _play(bot, chat, uid, name, game, bet, arg):
@@ -72,11 +75,49 @@ async def _play(bot, chat, uid, name, game, bet, arg):
         out = "↩️ Ставка вернулась"
     else:
         out = f"🎉 Выигрыш +{win - bet} (×{mult})" + (" ДЖЕКПОТ!" if mult >= 50 else "")
-    txt = (f"{title}\n{link(uid, name)} · ставка {bet}\n<b>{res}</b>\n{out}\n"
-           f"Фишек: {chips_of(uid)}")
+    txt = (f"{title} · {link(uid, name)}\n<b>{res}</b>\n{out} · ставка {bet}\n"
+           f"🪙 Фишек: {chips_of(uid)}")
+    info = dict(game=game, bet=bet, mult=mult, arg=arg)
+    if game == "slots":
+        info["reels"] = reels
+    elif game == "coin":
+        info["side"] = side
+    else:
+        info.update(num=n, col=col, kind=title)
     kb = InlineKeyboardMarkup([[B(f"🔁 Ещё раз ({bet})", callback_data=f"cas:{uid}:{ 'slots' if game == 'slots' else 'coin' if game == 'coin' else 'rul'}:{bet}:{arg}"),
                                 B("🎰 Меню", callback_data=f"cas:{uid}:menu")]])
-    return txt, kb, False
+    return txt, kb, None, info
+
+
+async def _gif(info):
+    """GIF под результат; None, если не вышло."""
+    from services import casino_gif as cg
+    try:
+        g, bet, mult = info["game"], info["bet"], info["mult"]
+        if g == "slots":
+            data = await asyncio.to_thread(cg.slots_gif, info["reels"], mult, bet)
+        elif g == "coin":
+            data = await asyncio.to_thread(cg.coin_gif, info["side"], info["arg"], mult, bet)
+        else:
+            data = await asyncio.to_thread(cg.roulette_gif, info["num"], info["col"], info["kind"].replace("🎡 ", ""), mult, bet)
+        bio = io.BytesIO(data)
+        bio.name = "casino.gif"
+        return bio
+    except Exception:
+        log.exception("casino gif")
+        return None
+
+
+async def _send_result(bot, chat, reply_to, txt, kb, info):
+    """Отправляет анимацию с подписью; при сбое шлёт просто текст."""
+    gif = await _gif(info)
+    if gif:
+        try:
+            return await bot.send_animation(chat, gif, caption=txt, parse_mode=HTML, reply_markup=kb,
+                                            reply_to_message_id=reply_to, read_timeout=25, write_timeout=25)
+        except Exception as e:
+            log.warning("casino send gif: %r", e)
+    return await bot.send_message(chat, txt, parse_mode=HTML, reply_markup=kb, reply_to_message_id=reply_to)
 
 
 async def handle_casino_text(update, context, low, text):
@@ -143,33 +184,10 @@ async def _run(msg, bot, me, game, bet, arg):
         return
     _busy.add(me.id)
     try:
-        if game in ("slots", "rul") and chips_of(me.id) >= bet and MIN_BET <= bet <= MAX_BET:
-            frames = {"slots": ["🎰 | 🎲 🎲 🎲 |", "🎰 | 🎲 🎲 ❔ |"], "rul": ["🎡 Крутим колесо… ⚪", "🎡 Крутим колесо… 🔴⚫"]}[game]
-            sent = await msg.reply_text(frames[0])
-            await asyncio.sleep(0.8)
-            try:
-                await sent.edit_text(frames[1])
-            except Exception:
-                pass
-            await asyncio.sleep(0.8)
-        else:
-            sent = None
         r = await _play(bot, msg.chat_id, me.id, disp(me), game, bet, arg)
         if len(r) == 3:
-            if sent:
-                try:
-                    await sent.delete()
-                except Exception:
-                    pass
             return await msg.reply_text(r[0])
-        txt, kb = r[0], r[1]
-        if sent:
-            try:
-                await sent.edit_text(txt, parse_mode=HTML, reply_markup=kb)
-                return
-            except Exception:
-                pass
-        await msg.reply_text(txt, parse_mode=HTML, reply_markup=kb)
+        await _send_result(bot, msg.chat_id, msg.message_id, r[0], r[1], r[3])
     finally:
         _busy.discard(me.id)
 
@@ -184,9 +202,10 @@ async def on_casino_btn(update, context):
     if p[2] == "menu":
         await q.answer()
         try:
-            await q.edit_message_text(_help(q.from_user.id), parse_mode=HTML, reply_markup=_menu(q.from_user.id))
+            await q.edit_message_reply_markup(None)
         except Exception:
             pass
+        await context.bot.send_message(q.message.chat_id, _help(q.from_user.id), parse_mode=HTML, reply_markup=_menu(q.from_user.id))
         return
     if len(p) < 4 or not p[3].isdigit():
         return await q.answer()
@@ -197,11 +216,16 @@ async def on_casino_btn(update, context):
     touch(me)
     if me.id in _busy:
         return await q.answer("Подожди, идёт игра")
-    r = await _play(context.bot, q.message.chat_id, me.id, disp(me), game, bet, arg)
-    if len(r) == 3:
-        return await q.answer(r[0], show_alert=True)
-    await q.answer()
+    _busy.add(me.id)
     try:
-        await q.edit_message_text(r[0], parse_mode=HTML, reply_markup=r[1])
-    except Exception:
-        pass
+        r = await _play(context.bot, q.message.chat_id, me.id, disp(me), game, bet, arg)
+        if len(r) == 3:
+            return await q.answer(r[0], show_alert=True)
+        await q.answer("Крутим…")
+        try:
+            await q.edit_message_reply_markup(None)       # у старого результата кнопки убираем, чтобы не копились
+        except Exception:
+            pass
+        await _send_result(context.bot, q.message.chat_id, None, r[0], r[1], r[3])
+    finally:
+        _busy.discard(me.id)
