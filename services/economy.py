@@ -25,4 +25,11 @@ def coins_of(uid):
 
 
 def shop_price(it):
-    return max(1, int(it["price"] * SHOP_PRICE_MULT))
+    mult = SHOP_PRICE_MULT
+    try:
+        from services.events import ev_on
+        if ev_on("shop"):
+            mult *= 0.8
+    except Exception:
+        pass
+    return max(1, int(it["price"] * mult))

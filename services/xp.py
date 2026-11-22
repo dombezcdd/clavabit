@@ -21,6 +21,12 @@ def give_xp(uid, amount):
     if not u:
         return []
     old = level_of(u["xp"])
+    try:
+        from services.events import ev_on
+        if amount > 0 and ev_on("xp"):
+            amount *= 2
+    except Exception:
+        pass
     xp = u["xp"] + amount
     new = level_of(xp)
     db.execute("UPDATE users SET xp=? WHERE user_id=?", (xp, uid))

@@ -115,6 +115,12 @@ def job_pay(row, shift_started=None):
             pay_mult = WANTED_PAY_MULT
     except Exception:
         pass
+    try:
+        from services.events import ev_on
+        if ev_on("pay"):
+            pay_mult *= 1.5
+    except Exception:
+        pass
     return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE * pay_mult))
 
 
