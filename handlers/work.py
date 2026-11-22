@@ -130,8 +130,8 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     note = ""
     r = random.random()
     if r < 0.10:
-        pay = int(pay * 1.5)
-        note = "\n🎉 Премия! Начальство довольно, зарплата +50%"
+        pay = int(pay * 1.2)
+        note = "\n🎉 Премия! Начальство довольно, зарплата +20%"
     elif r > 0.95:
         pay = int(pay * 0.5)
         note = "\n😬 Клиент недоволен, зарплата вдвое меньше"
