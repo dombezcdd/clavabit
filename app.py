@@ -25,6 +25,7 @@ from handlers.duelgames import on_duelgame_btn
 from handlers.court import on_court_btn
 from handlers.coop import on_coop_btn
 from handlers.passcmd import on_pass_btn
+from handlers.casino_games import on_cg_btn
 from handlers.payments import cmd_stars, on_pay_btn, on_paid, on_precheckout
 from handlers.finance import on_stock_btn
 from handlers.virus import on_virus_btn
@@ -162,6 +163,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_duelgame_btn, pattern=r"^dg:"))
     app.add_handler(CallbackQueryHandler(on_gift_btn, pattern=r"^gift:"))
     app.add_handler(CallbackQueryHandler(on_pass_btn, pattern=r"^ps:"))
+    app.add_handler(CallbackQueryHandler(on_cg_btn, pattern=r"^cg:"))
     app.add_handler(CallbackQueryHandler(on_pay_btn, pattern=r"^pay:"))
     app.add_handler(PreCheckoutQueryHandler(on_precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, on_paid))

@@ -20,7 +20,7 @@ _busy = set()
 KINDS = {"красное": "красное", "красный": "красное", "чёрное": "чёрное", "черное": "чёрное", "чёрный": "чёрное",
          "черный": "чёрное", "чётное": "чётное", "четное": "чётное", "нечётное": "нечётное", "нечетное": "нечётное",
          "зеро": "число"}
-CMD_RE = re.compile(r"^(слоты|слот|монетка|монета|рулетка|казино|фишки|бонус фишки|топ фишек)(?:\s+(.*))?$")
+CMD_RE = re.compile(r"^(слоты|слот|монетка|монета|рулетка|казино|фишки|бонус фишки|топ фишек|блэкджек|блекджек|бж|краш|ракета)(?:\s+(.*))?$")
 
 
 def _menu(uid):
@@ -36,7 +36,8 @@ def _help(uid):
             f"Играем на фишки, ставка {MIN_BET}–{MAX_BET}. На славКоины не влияют.\n\n"
             "🎰 <code>слоты 50</code>\n"
             "🪙 <code>монетка 20 орёл</code> (или решка)\n"
-            "🎡 <code>рулетка 30 красное</code> (чёрное, чётное, нечётное, <code>число 17</code>)\n\n"
+            "🎡 <code>рулетка 30 красное</code> (чёрное, чётное, нечётное, <code>число 17</code>)\n"
+            "🃏 <code>блэкджек 50</code> · 🚀 <code>краш 50</code> · 🎡 <code>рулетка стол</code> (общий стол)\n\n"
             f"Слоты: {pay}\n"
             f"«бонус фишки» +{DAILY_BONUS} раз в сутки · «топ фишек»")
 
@@ -139,13 +140,39 @@ async def handle_casino_text(update, context, low, text):
                     else "Сегодня бонус уже получен, приходи завтра 🙂")
         return True
     if cmd == "топ фишек":
-        rows = top_chips()
-        await reply(update, "🏆 <b>Топ игроков казино</b>\n" + "\n".join(
-            f"{i}. {link(r['user_id'], r['name'] or '?')} — {r['chips']} фишек" for i, r in enumerate(rows, 1)) if rows
-            else "Пока никто не играл")
+        from handlers.casino_games import send_top
+        await send_top(update)
         return True
+    from handlers import casino_games as G
+    chat = update.effective_chat.id
+    if cmd == "рулетка" and rest[:1] in (["стол"], ["столик"]):
+        err = await G.table_open_cmd(context.bot, chat)
+        if err:
+            await reply(update, err)
+        return True
+    if cmd in ("блэкджек", "блекджек", "бж", "краш", "ракета"):
+        try:
+            bet = int(rest[0])
+        except (ValueError, IndexError):
+            await reply(update, f"Ставка числом, например «{cmd} 50»")
+            return True
+        if me.id in _busy:
+            return True
+        _busy.add(me.id)
+        try:
+            if cmd in ("краш", "ракета"):
+                err = await G.crash_join(context.bot, chat, me, bet)
+            else:
+                err = await G.bj_start(context.bot, chat, me, bet, update.effective_message.message_id)
+        finally:
+            _busy.discard(me.id)
+        if err:
+            await reply(update, err)
+        return True
+    if cmd == "казино" and False:
+        pass
     if cmd == "казино" or (not rest and cmd in ("слоты", "слот", "монетка", "монета", "рулетка")):
-        await update.effective_message.reply_text(_help(me.id), parse_mode=HTML, reply_markup=_menu(me.id))
+        await G.send_lobby(update, _help(me.id), me.id)
         return True
     try:
         bet = int(rest[0])
@@ -176,6 +203,11 @@ async def handle_casino_text(update, context, low, text):
             await reply(update, "Ставь на: красное, чёрное, чётное, нечётное или число. Например «рулетка 30 красное»")
             return True
         game = "rul"
+        if G.table_open(chat):
+            kk, _, nn = arg.partition(":")
+            err = await G.table_bet(context.bot, chat, me, bet, kk, nn or None)
+            await reply(update, err or f"🎡 Ставка принята: {bet} на {arg.replace(':', ' ')}")
+            return True
     await _run(update.effective_message, context.bot, me, game, bet, arg)
     return True
 
@@ -206,7 +238,7 @@ async def on_casino_btn(update, context):
             await q.edit_message_reply_markup(None)
         except Exception:
             pass
-        await context.bot.send_message(q.message.chat_id, _help(q.from_user.id), parse_mode=HTML, reply_markup=_menu(q.from_user.id))
+        await context.bot.send_message(q.message.chat_id, _help(q.from_user.id), parse_mode=HTML, reply_markup=__import__('handlers.casino_games', fromlist=['x']).menu_kb(q.from_user.id))
         return
     if len(p) < 4 or not p[3].isdigit():
         return await q.answer()

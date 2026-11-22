@@ -136,7 +136,9 @@ def roulette_gif(num, color, kind_text, mult, bet):
             c = GREEN if color == "зелёное" else (RED if color == "красное" else (50, 50, 60))
             d.ellipse((cx - 30, cy - 30, cx + 30, cy + 30), fill=c, outline=WHITE, width=3)
             d.text((cx, cy), str(num), font=_font(30, True), fill=WHITE, anchor="mm")
-            if mult == 0:
+            if mult is None:
+                _banner(d, f"{num} · {color}".upper(), WHITE)
+            elif mult == 0:
                 _banner(d, f"МИМО  −{bet}", (255, 150, 150))
             else:
                 _banner(d, f"ВЫИГРЫШ +{bet * mult - bet}", (150, 255, 180))
