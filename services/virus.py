@@ -15,8 +15,8 @@ INFECT_CHANCE = 0.55
 SICK_PAY_MULT = 0.75      # болезнь забирает 25% зарплаты
 CURE_PER_HOUR = 10
 CURE_MIN = 20
-BOOST_MIN = 10            # после лечения +5% к доходу на 10 минут
-BOOST_PCT = 5
+BOOST_MIN = 10            # после лечения +3% к доходу на 10 минут
+BOOST_PCT = 3
 
 
 def is_sick(row):

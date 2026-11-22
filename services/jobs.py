@@ -103,7 +103,7 @@ def shown_cd(cd):
 def job_pay(row, shift_started=None):
     name, base, cd, req = JOBS[row["job"]]
     mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP * PAY_GROW_MAX + house_bonus_pct(row["user_id"]) / 100 \
-        + clan_bonus_pct(row["user_id"]) / 100
+        + clan_bonus_pct(row["user_id"]) / 150
     if has_boost(row):
         mult += BOOST_PCT / 100
     if (sick_for_shift(row, shift_started) if shift_started is not None else is_sick(row)):
@@ -119,7 +119,7 @@ def job_pay(row, shift_started=None):
 
 
 PAY_GROW_CAP = 200     # на стольких сменах бонус за стаж достигает максимума
-PAY_GROW_MAX = 0.15    # максимум бонуса за стаж: +15%
+PAY_GROW_MAX = 0.10    # максимум бонуса за стаж: +10%
 CD_GROW_CAP = 200      # на стольких сменах пауза между сменами вырастает на CD_GROW_HOURS
 CD_GROW_HOURS = 2      # «пара часов» (до масштаба смены)
 XP_PER_SHIFT = 5       # опыта за смену; с ростом стажа больше (+1 за каждые 25 смен)
