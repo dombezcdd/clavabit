@@ -56,6 +56,8 @@ async def quest_hit(bot, uid, col, chat_id=None):
     try:
         bump(uid, col)
         await check_quests(bot, uid, chat_id)
+        from handlers.passcmd import announce_ach
+        await announce_ach(bot, uid, chat_id)
     except Exception:
         log.exception("quest_hit")
 
