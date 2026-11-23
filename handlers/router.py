@@ -24,6 +24,7 @@ from handlers.live import handle_live_text
 from handlers.vip import handle_vip_text
 from handlers.admin_fun import handle_adminfun_text
 from handlers.passcmd import handle_ach_text, handle_pass_text
+from handlers.farm import handle_farm_text
 from handlers.payments import handle_pay_text
 from handlers.admin import handle_admin_text
 from handlers.court import handle_court_text
@@ -221,6 +222,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await handle_ach_text(update, context, cmd_low, text):
+        return
+
+    if await handle_farm_text(update, context, cmd_low, text):
         return
 
     if await handle_pay_text(update, context, cmd_low, text):
