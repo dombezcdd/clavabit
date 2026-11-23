@@ -45,7 +45,11 @@ function rounds(list, perRoundSec, done, opts) {
     if (op && op.ok) { pts = 60 + 40 * (left / perRoundSec); btn.classList.add("ok"); haptic("success"); }
     else { if (btn) btn.classList.add("bad"); haptic("error"); list[i].options.forEach(x => { if (x.ok && x.node) x.node.classList.add("ok"); }); }
     total += pts; pill.textContent = Math.round(total / list.length);
-    i++; setTimeout(show, op ? 650 : 900);
+    const rr = list[i], good = !!(op && op.ok);
+    const bl = document.getElementById("blank");
+    if (bl && rr.fill) { bl.textContent = rr.fill; bl.classList.add(good ? "ok" : "bad"); }
+    if (rr.note) { const lg = el("div", "logbox " + (good ? "ok" : "bad"), good ? "✓ build passed, тесты зелёные" : "✗ " + rr.note); box.appendChild(lg); }
+    i++; setTimeout(show, op ? (rr.note || rr.fill ? 950 : 650) : 1300);
   }
   cleanup = () => { cancelAnimationFrame(raf); };
   show();
