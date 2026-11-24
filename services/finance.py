@@ -166,6 +166,37 @@ def holding(uid, sym):
     return db.execute("SELECT * FROM holdings WHERE user_id=? AND sym=?", (uid, sym)).fetchone()
 
 
+PUMP_P, CRASH_P = 0.09, 0.15      # шанс взлёта и обвала после любой сделки (обвал вероятнее)
+_EVT = [""]
+
+
+def pop_event():
+    t, _EVT[0] = _EVT[0], ""
+    return ("\n" + t) if t else ""
+
+
+def trade_impact(s, qty, side):
+    """Сделка двигает цену: небольшой сдвиг в сторону сделки, иногда взлёт или обвал. Цена сразу становится настоящей."""
+    old = float(s["price"])
+    r = random.random()
+    drift = min(0.03, 0.002 * qty) * (1 if side == "buy" else -1)
+    txt = ""
+    if r < CRASH_P:
+        ch = -random.uniform(0.04, 0.10)
+        txt = random.choice(("💥 Обвал! Инвесторы запаниковали", "📉 Пузырь лопнул, акции летят вниз", "🩸 Массовая распродажа"))
+    elif r < CRASH_P + PUMP_P:
+        ch = random.uniform(0.03, 0.08)
+        txt = random.choice(("🚀 Взлёт! Все скупают", "📈 Хайп вокруг компании", "🔥 Акции пошли вверх"))
+    else:
+        ch = drift
+    new = round(max(s["base"] * 0.4, min(s["base"] * 3, old * (1 + ch))), 2)
+    db.execute("UPDATE stocks SET prev=?, price=?, updated=? WHERE sym=?", (old, new, time.time(), s["sym"]))
+    db.execute("INSERT INTO stock_hist(sym,ts,price) VALUES(?,?,?)", (s["sym"], time.time(), new))
+    db.commit()
+    if txt:
+        _EVT[0] = f"{txt}: <b>{s['sym']}</b> {old:.2f} → {new:.2f} ({(new / old - 1) * 100:+.1f}%)"
+
+
 def buy_stock(uid, s, qty):
     """-> (ok, текст ошибки или стоимость)"""
     cost = math.ceil(s["price"] * qty)
@@ -186,6 +217,7 @@ def buy_stock(uid, s, qty):
     db.execute("INSERT INTO stock_day(user_id,day,spent) VALUES(?,?,?) "
                "ON CONFLICT(user_id,day) DO UPDATE SET spent=spent+?", (uid, today(), cost, cost))
     db.commit()
+    trade_impact(s, qty, "buy")
     return True, cost
 
 
@@ -208,6 +240,7 @@ def sell_stock(uid, s, qty):
     db.execute("INSERT INTO investors(user_id,profit) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET profit=profit+?",
                (uid, profit, profit))
     db.commit()
+    trade_impact(s, qty, "sell")
     return True, (net, profit, fee, qty)
 
 

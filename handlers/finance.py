@@ -20,7 +20,7 @@ from services.charts import alert, overview
 from services.virus import BOOST_PCT, has_boost
 from services.economy import COIN, coins_of, give_coins
 from services.finance import (BIZ, BIZ_CAP_H, STOCK_ALERT, STOCK_DAY_LIMIT, STOCK_FEE, STOCK_MAX_QTY, biz_accrued,
-                              biz_of, biz_roll_event, biz_upgrade_cost, buy_stock, find_stock, history, holding,
+                              biz_of, biz_roll_event, biz_upgrade_cost, buy_stock, find_stock, history, holding, pop_event,
                               init_stocks, sell_stock, spent_today, tick_prices, STOCK_TICK_SEC)
 
 BUY_RE = re.compile(r"^купить акци[июя]\s+(\S+)(?:\s+(\d+))?$")
@@ -316,14 +316,14 @@ async def on_stock_btn(update, context):
         n = int(p[3])
         if act == "b":
             ok, res = buy_stock(me.id, s, n)
-            await q.answer(f"Куплено {n} шт. за {res} {COIN}" if ok else res, show_alert=not ok)
+            await q.answer((f"Куплено {n} шт. за {res} {COIN}" if ok else res) + __import__("re").sub("<[^>]+>", "", pop_event()), show_alert=not ok)
             if ok:
                 from services.xp import quest_hit
                 await quest_hit(context.bot, me.id, "stock", q.message.chat_id)
         else:
             h = holding(me.id, s["sym"])
             ok, res = sell_stock(me.id, s, n or (h["qty"] if h else 1))
-            await q.answer(f"Продано {res[3]} шт.: +{res[0]} {COIN} (итог {res[1]:+d})" if ok else res, show_alert=not ok)
+            await q.answer((f"Продано {res[3]} шт.: +{res[0]} {COIN} (итог {res[1]:+d})" if ok else res) + __import__("re").sub("<[^>]+>", "", pop_event()), show_alert=not ok)
             if ok:
                 from services.xp import quest_hit
                 await quest_hit(context.bot, me.id, "stock", q.message.chat_id)
@@ -345,7 +345,7 @@ async def _buy(update, me, name, qty):
     from services.xp import quest_hit
     await quest_hit(update.get_bot(), me.id, "stock", update.effective_chat.id)
     await reply(update, f"📥 {link(me.id, disp(me))} купил(а) {qty} шт. <b>{s['sym']}</b> по {s['price']:.2f} "
-                        f"за {res} {COIN}. Сегодня вложено {spent_today(me.id)} из {STOCK_DAY_LIMIT}")
+                        f"за {res} {COIN}. Сегодня вложено {spent_today(me.id)} из {STOCK_DAY_LIMIT}" + pop_event())
     return True
 
 
@@ -367,7 +367,7 @@ async def _sell(update, me, name, qty):
     from services.xp import quest_hit
     await quest_hit(update.get_bot(), me.id, "stock", update.effective_chat.id)
     await reply(update, f"📤 {link(me.id, disp(me))} продал(а) {n} шт. <b>{s['sym']}</b> по {s['price']:.2f}: "
-                        f"+{net} {COIN} (комиссия {fee}). Итог сделки: {'📈 +' if profit >= 0 else '📉 '}{profit} {COIN}")
+                        f"+{net} {COIN} (комиссия {fee}). Итог сделки: {'📈 +' if profit >= 0 else '📉 '}{profit} {COIN}" + pop_event())
     return True
 
 

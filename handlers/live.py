@@ -15,7 +15,7 @@ from core.utils import esc, link, now, touch, urow
 from database.db import db
 from services.economy import COIN
 from services.finance import (HIST_KEEP, STOCK_DAY_LIMIT, buy_stock, find_stock, history, holding, init_stocks, micro_tick,
-                              sell_stock, spent_today)
+                              sell_stock, spent_today, pop_event)
 
 STEP_SEC = 5
 SESSION_SEC = 150
@@ -295,7 +295,7 @@ async def on_live_btn(update, context):
         if ok:
             from services.xp import quest_hit
             await quest_hit(context.bot, me.id, "stock", chat)
-        return await q.answer(f"📥 Куплено {qty} {sym} по {s['price']:.2f}: −{res} {COIN}" if ok else res, show_alert=not ok)
+        return await q.answer((f"📥 Куплено {qty} {sym} по {s['price']:.2f}: −{res} {COIN}" if ok else res) + __import__("re").sub("<[^>]+>", "", pop_event()), show_alert=not ok)
     if act in ("s1", "sa"):
         h = holding(me.id, sym)
         qty = 1 if act == "s1" else (h["qty"] if h else 1)
@@ -305,5 +305,5 @@ async def on_live_btn(update, context):
         net, profit, fee, n = res
         from services.xp import quest_hit
         await quest_hit(context.bot, me.id, "stock", chat)
-        return await q.answer(f"📤 Продано {n} {sym}: +{net} {COIN}, сделка {profit:+d}", show_alert=True)
+        return await q.answer(f"📤 Продано {n} {sym}: +{net} {COIN}, сделка {profit:+d}" + __import__("re").sub("<[^>]+>", "", pop_event()), show_alert=True)
     await q.answer()
