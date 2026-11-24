@@ -45,133 +45,121 @@
     return wave ? "<span class='err'>" + out + "</span>" : out;
   }
 
-  const BUGS = [
-    [["x = 5", "if x = 5:", "    print('ok')"], 1, "main.py", "SyntaxError: invalid syntax. Maybe you meant '==' ?"],
-    [["let a = [1, 2, 3];", "for (let i = 0; i <= a.length; i++) {", "  console.log(a[i]);", "}"], 1, "app.js", "undefined на последнем шаге: i <= a.length выходит за массив"],
-    [["def add(a, b):", "    return a - b", "print(add(2, 3))  # ждём 5"], 1, "calc.py", "assert add(2, 3) == 5, получили -1"],
-    [["name = input()", "print('Привет, ' + nme)"], 1, "main.py", "NameError: name 'nme' is not defined"],
-    [["const s = 'abc';", "s.push('d');", "console.log(s);"], 1, "app.js", "TypeError: s.push is not a function"],
-    [["a = [1, 2, 3]", "print(a[3])  # третий элемент"], 1, "main.py", "IndexError: list index out of range"],
-    [["import os", "print(os.getcwdd())"], 1, "main.py", "AttributeError: module 'os' has no attribute 'getcwdd'"],
-    [["for i in range(3)", "    print(i)"], 0, "main.py", "SyntaxError: expected ':'"],
-    [["SELEKT * FROM users", "WHERE name = 'Аня'"], 0, "query.sql", "Syntax error near 'SELEKT'"],
-    [["total = 0", "for n in [1, 2, 3]:", "    total = n", "print(total)  # ждём 6"], 2, "sum.py", "assert total == 6, получили 3"],
-    [["def is_even(n):", "    return n % 2 == 1", "print(is_even(4))  # ждём True"], 1, "even.py", "assert is_even(4) is True, получили False"],
-    [["let list = [3, 1, 2];", "list.sort();", "console.log(list.lenght);"], 2, "app.js", "undefined: у массива нет свойства 'lenght'"],
-    [["name = 'Аня'", "print('Привет, ' + name + '!)"], 1, "main.py", "SyntaxError: unterminated string literal"],
-    [["for (let i = 0; i < 3; i--) {", "  console.log(i);", "}"], 0, "loop.js", "Timeout: цикл не завершается (i уменьшается)"],
-    [["price = '100'", "print(price + 20)  # ждём 120"], 1, "main.py", "TypeError: can only concatenate str (not \"int\") to str"]
-  ];
-  const FILLS = [
-    [["def square(x):", "    return ____", "print(square(4))  # 16"], 1, "x * x", ["x + x", "x * 2"], "square.py", "assert square(4) == 16"],
-    [["for i in ____(3):", "    print(i)"], 0, "range", ["len", "print"], "loop.py", "нужно вывести 0 1 2"],
-    [["let ok = true;", "if (!ok) {", "  alert('Ошибка');", "} ____ {", "  alert('Всё хорошо');", "}"], 3, "else", ["elif", "then"], "app.js", "SyntaxError: Unexpected token"],
-    [["nums = [1, 2, 3]", "print(____(nums))  # 6"], 1, "sum", ["len", "max"], "main.py", "assert result == 6"],
-    [["let a = [];", "a.____(5);", "console.log(a);  // [5]"], 1, "push", ["add", "append"], "app.js", "TypeError: a.add is not a function"],
-    [["text = 'привет'", "print(text.____())  # ПРИВЕТ"], 1, "upper", ["lower", "len"], "main.py", "ждём ПРИВЕТ"],
-    [["SELECT name ____ users;"], 0, "FROM", ["IN", "OF"], "query.sql", "Syntax error near 'users'"],
-    [["x = 10", "while x ____ 0:", "    x -= 3"], 1, ">", ["<", "=="], "loop.py", "цикл должен идти, пока x больше нуля"]
-  ];
-  const PRED = [
-    [["x = 3", "y = x * 2", "print(y + 1)"], "7", ["6", "9"], "main.py"],
-    [["a = [1, 2, 3]", "a.append(4)", "print(len(a))"], "4", ["3", "5"], "main.py"],
-    [["s = 'ab'", "print(s * 3)"], "ababab", ["ab3", "ababa"], "main.py"],
-    [["n = 5", "while n > 2:", "    n -= 1", "print(n)"], "2", ["3", "1"], "main.py"],
-    [["print(10 // 3)"], "3", ["3.33", "4"], "main.py"],
-    [["print('5' + '5')"], "55", ["10", "5"], "main.py"],
-    [["print(len('привет'))"], "6", ["7", "5"], "main.py"],
-    [["console.log(1 + '2');"], "12", ["3", "NaN"], "app.js"]
-  ];
-
-  function ideHtml(lines, file, blankIdx, bugIdx, tabState) {
-    const gut = lines.map((_, i) => i + 1).join("<br>");
-    const src = lines.map((l, i) => {
-      let h = hl(l);
-      if (blankIdx === i) h = h.replace("____", "<span class='blank' id='blank'>____</span>");
-      return "<span class='line' id='ln" + i + "'>" + (h || "&nbsp;") + "</span>";
-    }).join("");
-    const mini = lines.map((_, i) => "<i id='mm" + i + "'></i>").join("");
-    return "<div class='ide'><div class='tabs'><div class='on'>" + file + " <span id='dot' class='x'>●</span></div><div>tests.py</div></div>" +
-      "<div class='code'><div class='gut'>" + gut + "</div><div class='src'>" + src + "</div><div class='mini'>" + mini + "</div></div></div>";
+  /* ===== звук и вибрация ===== */
+  let AC = null;
+  function beep(f, d, type, vol) {
+    try {
+      AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type || "square"; o.frequency.value = f; g.gain.value = vol || 0.04;
+      o.connect(g); g.connect(AC.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.stop(AC.currentTime + d);
+    } catch (e) {}
   }
+  const sfx = {
+    tap() { beep(660, 0.05); try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred("light"); } catch (e) {} },
+    ok() { beep(523, 0.12); setTimeout(() => beep(784, 0.18), 110); haptic("success"); },
+    bad() { beep(180, 0.3, "sawtooth", 0.05); haptic("error"); }
+  };
 
-  function coder2(done) {
-    const bugs = shuffle(BUGS).slice(0, 3).map(b => ({ t: "bug", lines: b[0], idx: b[1], file: b[2], err: b[3] }));
-    const fills = shuffle(FILLS).slice(0, 2).map(f => ({ t: "fill", lines: f[0], idx: f[1], right: f[2], wrong: f[3], file: f[4], err: f[5] }));
-    const preds = shuffle(PRED).slice(0, 2).map(p => ({ t: "pred", lines: p[0], right: p[1], wrong: p[2], file: p[3] }));
-    const list = shuffle([...bugs, ...fills, ...preds]);
-    const TASK = ["Прод упал после твоего коммита. Найди баг, пока не позвонил заказчик.", "Тимлид просит доделать функцию до обеда.", "Ревью кода: коллега ждёт, пока ты закончишь."];
-    const PER = 12;
-    let i = 0, total = 0, streak = 0, t0 = 0, raf = 0, lock = false;
+  /* ===== программы для сборки: строки по порядку, ложные строки, тесты ===== */
+  const PROGS = [
+    { lvl: 0, file: "greet.py", task: "Сделай функцию приветствия", tests: ["greet('Аня') == 'Привет, Аня'"],
+      code: ["def greet(name):", "    text = 'Привет, ' + name", "    return text"], fake: ["    print(text)", "    return name"] },
+    { lvl: 0, file: "bigger.py", task: "Верни большее из двух чисел", tests: ["bigger(3, 7) == 7", "bigger(9, 2) == 9"],
+      code: ["def bigger(a, b):", "    if a > b:", "        return a", "    return b"], fake: ["    if a < b:", "    return a"] },
+    { lvl: 0, file: "double.py", task: "Удвой каждое число списка", tests: ["double([1, 2]) == [2, 4]"],
+      code: ["def double(nums):", "    out = []", "    for n in nums:", "        out.append(n * 2)", "    return out"], fake: ["        out.append(n)", "    return nums"] },
+    { lvl: 1, file: "evens.py", task: "Посчитай сумму чётных чисел", tests: ["sum_even([1, 2, 3, 4]) == 6"],
+      code: ["def sum_even(nums):", "    total = 0", "    for n in nums:", "        if n % 2 == 0:", "            total += n", "    return total"], fake: ["        if n % 2 == 1:", "    total = 1"] },
+    { lvl: 1, file: "count.py", task: "Посчитай буквы «а» в строке", tests: ["count_a('banana') == 3"],
+      code: ["def count_a(s):", "    n = 0", "    for ch in s:", "        if ch == 'a':", "            n += 1", "    return n"], fake: ["        if ch != 'a':", "    n = len(s)"] },
+    { lvl: 1, file: "fizz.py", task: "Fizz для чисел, кратных трём", tests: ["fizz(9) == 'Fizz'", "fizz(4) == '4'"],
+      code: ["def fizz(n):", "    if n % 3 == 0:", "        return 'Fizz'", "    return str(n)"], fake: ["    if n % 3 == 1:", "    return n"] },
+    { lvl: 2, file: "fact.py", task: "Посчитай факториал числа", tests: ["fact(5) == 120", "fact(1) == 1"],
+      code: ["def fact(n):", "    r = 1", "    for i in range(1, n + 1):", "        r *= i", "    return r"], fake: ["    r = 0", "    for i in range(n):", "        r += i"] },
+    { lvl: 2, file: "maxlist.py", task: "Найди максимум в списке", tests: ["top([4, 9, 2]) == 9"],
+      code: ["def top(nums):", "    best = nums[0]", "    for n in nums:", "        if n > best:", "            best = n", "    return best"], fake: ["        if n < best:", "    best = 0"] },
+    { lvl: 2, file: "pal.py", task: "Проверь, палиндром ли слово", tests: ["pal('шалаш') is True", "pal('дом') is False"],
+      code: ["def pal(w):", "    rev = w[::-1]", "    if rev == w:", "        return True", "    return False"], fake: ["    rev = w", "        return False"] }
+  ];
+  const LV = [{ name: "Стажёр", sec: 45 }, { name: "Миддл", sec: 55 }, { name: "Сеньор", sec: 65 }];
+
+  function coder3(done) {
+    const set = [0, 1, 2].map(l => pick(PROGS.filter(p => p.lvl === l)));
+    let li = 0, total = 0, raf = 0, lock = false, t0 = 0, runs = 0;
     const wrap = el("div", "pg"); stage.appendChild(wrap);
-    hint.textContent = "Чем быстрее ответ и длиннее серия, тем больше очков";
-
-    function show() {
-      if (i >= list.length) { cancelAnimationFrame(raf); return done(Math.min(100, Math.round(total / list.length))); }
-      const r = list[i]; lock = false; wrap.innerHTML = "";
-      const task = el("div", "task");
-      const title = r.t === "bug" ? "🐞 Найди строку с багом" : r.t === "fill" ? "🧩 Допиши код вместо ____" : "▶ Что выведет программа?";
-      task.innerHTML = "<b>Раунд " + (i + 1) + "/" + list.length + ".</b> " + pick(TASK) + "<br>" + title;
-      const cb = el("div", "combo" + (streak ? "" : " off"), "серия x" + Math.max(1, streak) + " 🔥");
-      const ide = el("div"); ide.innerHTML = ideHtml(r.lines, r.file, r.t === "fill" ? r.idx : -1);
-      const term = el("div", "term");
-      let tb;
-      if (r.t === "bug") tb = "<span class='d'>$</span> pytest " + r.file + "<br><span class='r'>FAILED</span> " + esc(r.err).replace(/&nbsp;/g, " ") + "<br><span class='y'>1 failed</span>, <span class='g'>2 passed</span>";
-      else if (r.t === "fill") tb = "<span class='d'>$</span> run " + r.file + "<br><span class='r'>ERROR</span> " + esc(r.err).replace(/&nbsp;/g, " ") + "<br><span class='d'>вставь недостающее слово</span>";
-      else tb = "<span class='d'>$ python " + r.file + "</span><br><span class='d'>… выполняется</span>";
-      term.innerHTML = "<div class='h'><span>ТЕРМИНАЛ</span><span class='d'>" + (r.file.endsWith(".js") ? "node 22" : r.file.endsWith(".sql") ? "sqlite" : "python 3.12") + "</span></div><div class='b' id='tb'>" + tb + "</div>";
-      const opts = el("div", "opts");
-      let options;
-      if (r.t === "bug") options = r.lines.map((l, k) => ({ html: "<span class='n'>" + (k + 1) + "</span><span>" + hl(l) + "</span>", ok: k === r.idx }));
-      else options = shuffle([{ html: hl(r.right), ok: true }, ...r.wrong.map(w => ({ html: hl(w), ok: false }))]);
-      options = r.t === "bug" ? options : options.map(o => o);
-      if (r.t === "pred") options = shuffle([{ html: esc(r.right), ok: true }, ...r.wrong.map(w => ({ html: esc(w), ok: false }))]);
-      options.forEach(op => {
-        const b = el("button", "o"); b.innerHTML = op.html;
-        b.onclick = () => answer(b, op, r, term);
-        op.node = b; opts.appendChild(b);
-      });
-      r.opts = options;
-      const sb = el("div", "sbar"); sb.innerHTML = "<span>⎇ main · " + (r.t === "bug" ? "1 ошибка" : "в работе") + "</span><span>UTF-8</span>";
-      wrap.append(task, cb, ide, term, opts, sb);
-      t0 = performance.now(); cancelAnimationFrame(raf); tick();
-    }
-    function tick() {
-      const left = PER - ((performance.now() - t0) / 1000) * FAST;
-      setTime(left / PER);
-      if (left <= 0 && !lock) { answer(null, null, list[i], wrap.querySelector(".term")); return; }
-      raf = requestAnimationFrame(tick);
-    }
-    function answer(btn, op, r, term) {
-      if (lock) return; lock = true; cancelAnimationFrame(raf);
-      const left = clamp(PER - ((performance.now() - t0) / 1000) * FAST, 0, PER);
-      const good = !!(op && op.ok);
-      let pts = 0;
-      if (good) { streak++; pts = (60 + 40 * (left / PER)) * (1 + Math.min(0.3, 0.1 * (streak - 1))); btn.classList.add("ok"); haptic("success"); }
-      else { streak = 0; if (btn) btn.classList.add("bad"); haptic("error"); }
-      pts = Math.min(100, pts);
-      total += pts; pill.textContent = Math.round(total / list.length);
-      const tb = wrap.querySelector("#tb");
-      if (r.t === "bug") {
-        const ln = wrap.querySelector("#ln" + r.idx), mm = wrap.querySelector("#mm" + r.idx);
-        if (ln) { ln.classList.add(good ? "fixed" : "sel"); }
-        if (mm) mm.className = "r";
-        const dot = wrap.querySelector("#dot"); if (dot && good) { dot.className = "okc"; dot.textContent = "✓"; }
-        tb.innerHTML += good ? "<br><span class='g'>PASSED</span> строка " + (r.idx + 1) + " исправлена, <span class='g'>3 passed</span> ✓" : "<br><span class='r'>Баг был в строке " + (r.idx + 1) + "</span>, тесты всё ещё красные";
-      } else if (r.t === "fill") {
-        const bl = wrap.querySelector("#blank");
-        if (bl) { bl.textContent = r.right; bl.classList.add(good ? "ok" : "bad"); }
-        tb.innerHTML += good ? "<br><span class='g'>OK</span> код собран, тест зелёный ✓" : "<br><span class='r'>Правильно: " + esc(r.right) + "</span>";
-      } else {
-        tb.innerHTML = "<span class='d'>$ python " + r.file + "</span><br>" + (good ? "<span class='g'>" + esc(r.right) + "</span><br><span class='g'>✓ угадал вывод</span>" : "<span class='y'>" + esc(r.right) + "</span><br><span class='r'>вывод был другим</span>");
-      }
-      const cb = wrap.querySelector(".combo"); if (cb && good) { cb.className = "combo pop"; cb.textContent = "серия x" + streak + " 🔥"; }
-      if (!good && r.opts) r.opts.forEach(x => { if (x.ok && x.node) x.node.classList.add("ok"); });
-      wrap.querySelectorAll(".o").forEach(n => { n.disabled = true; });
-      i++; setTimeout(show, good ? 1100 : 1700);
-    }
+    hint.textContent = "Нажимай блоки: они встают в программу по порядку. Тапни по строке, чтобы убрать";
     cleanup = () => { cancelAnimationFrame(raf); };
-    show();
+
+    function level() {
+      const P = set[li], L = LV[li], n = P.code.length;
+      lock = false; runs = 0; wrap.innerHTML = "";
+      const slots = new Array(n).fill(null);                   // индексы блоков в слотах
+      const pool = shuffle(P.code.map((t, i) => ({ t, i, fake: false })).concat(P.fake.map((t, i) => ({ t, i: -1 - i, fake: true }))));
+      const task = el("div", "task", "<b>Уровень " + (li + 1) + "/3 · " + L.name + ".</b> Тимлид: «" + P.task + "». Собери программу из блоков, лишние блоки не нужны.");
+      const cb = el("div", "combo off", "попыток 3 · " + L.sec + " с");
+      const ide = el("div", "ide");
+      ide.innerHTML = "<div class='tabs'><div class='on'>" + P.file + " <span id='dot' class='x'>●</span></div><div>tests.py</div></div>";
+      const code = el("div", "code"); const gut = el("div", "gut", P.code.map((_, i) => i + 1).join("<br>"));
+      const src = el("div", "src"); code.append(gut, src); ide.appendChild(code);
+      const term = el("div", "term"); const tb = el("div", "b");
+      term.innerHTML = "<div class='h'><span>ТЕРМИНАЛ</span><span class='d'>python 3.12</span></div>"; term.appendChild(tb);
+      const pend = () => "<span class='d'>$</span> pytest " + P.file + "<br>" + P.tests.map(t => "<span class='d'>○ " + esc(t) + "</span>").join("<br>");
+      tb.innerHTML = pend();
+      const poolBox = el("div", "opts");
+      const run = el("button", "o"); run.style.cssText = "justify-content:center;font-weight:800;background:#3b5bdb;border-color:#3b5bdb"; run.textContent = "▶ Запустить тесты"; run.disabled = true; run.style.opacity = .5;
+
+      function draw() {
+        src.innerHTML = ""; poolBox.innerHTML = "";
+        slots.forEach((bi, si) => {
+          const ln = el("span", "line", ""); ln.style.minHeight = "22px";
+          if (bi == null) { ln.innerHTML = "<span class='cm'>" + esc("# строка " + (si + 1)) + "</span>"; ln.style.opacity = .55; }
+          else { const b = pool.find(x => x.i === bi); ln.innerHTML = hl(b.t); ln.onclick = () => { if (lock) return; slots[si] = null; sfx.tap(); draw(); }; ln.style.cursor = "pointer"; }
+          ln.id = "s" + si; src.appendChild(ln);
+        });
+        pool.forEach(b => {
+          if (slots.includes(b.i)) return;
+          const bt = el("button", "o"); bt.innerHTML = "<span>" + hl(b.t) + "</span>";
+          bt.onclick = () => { if (lock) return; const k = slots.indexOf(null); if (k < 0) return; slots[k] = b.i; sfx.tap(); draw(); };
+          poolBox.appendChild(bt);
+        });
+        const full = slots.every(x => x != null);
+        run.disabled = !full || lock; run.style.opacity = full && !lock ? 1 : .5;
+      }
+      run.onclick = () => {
+        if (lock || !slots.every(x => x != null)) return;
+        runs++; const okAll = slots.every((bi, si) => bi === si);
+        slots.forEach((bi, si) => { const ln = src.children[si]; ln.classList.remove("sel", "fixed"); ln.classList.add(bi === si ? "fixed" : "sel"); });
+        if (okAll) { win(); return; }
+        sfx.bad();
+        tb.innerHTML = "<span class='d'>$</span> pytest " + P.file + "<br>" + P.tests.map(t => "<span class='r'>✗ " + esc(t) + "</span>").join("<br>") +
+          "<br><span class='r'>FAILED</span> зелёные строки на месте, красные нет · попытка " + runs + "/3";
+        cb.className = "combo off"; cb.textContent = "попыток " + Math.max(0, 3 - runs);
+        if (runs >= 3) { give(false); return; }
+        setTimeout(() => { slots.forEach((bi, si) => { if (bi !== si) slots[si] = null; }); draw(); }, 900);   // верные строки остаются
+      };
+      function win() { sfx.ok(); const dot = wrap.querySelector("#dot"); dot.className = "okc"; dot.textContent = "✓";
+        tb.innerHTML = "<span class='d'>$</span> pytest " + P.file + "<br>" + P.tests.map(t => "<span class='g'>✓ " + esc(t) + "</span>").join("<br>") + "<br><span class='g'>PASSED</span> " + P.tests.length + " passed, деплой в прод 🚀";
+        cb.className = "combo pop"; cb.textContent = "зелёный билд ✅"; give(true); }
+      function give(ok) {
+        lock = true; cancelAnimationFrame(raf); draw();
+        const left = clamp(L.sec - ((performance.now() - t0) / 1000) * FAST, 0, L.sec);
+        const pts = ok ? clamp(100 - (runs - 1) * 20 - 25 * (1 - left / L.sec), 35, 100) : 0;
+        total += pts; pill.textContent = Math.round(total / 3);
+        if (!ok) { slots.forEach((_, si) => { slots[si] = si; }); draw(); slots.forEach((_, si) => { const ln = src.children[si]; ln.classList.add("fixed"); });
+          tb.innerHTML += "<br><span class='y'>Вот правильный порядок</span>"; }
+        li++; setTimeout(() => (li >= 3 ? done(Math.round(total / 3)) : level()), ok ? 1500 : 2600);
+      }
+      function tick() {
+        const left = L.sec - ((performance.now() - t0) / 1000) * FAST; setTime(left / L.sec);
+        if (left <= 0 && !lock) { runs = Math.max(runs, 1); tb.innerHTML = "<span class='r'>TIMEOUT</span> время вышло, прод упал"; sfx.bad(); give(false); return; }
+        raf = requestAnimationFrame(tick);
+      }
+      const sb = el("div", "sbar", "<span>⎇ main · собери " + n + " строк</span><span>UTF-8</span>");
+      wrap.append(task, cb, ide, term, poolBox, run, sb);
+      draw(); t0 = performance.now(); cancelAnimationFrame(raf); tick();
+    }
+    level();
   }
-  JOBS.prg = ["💻 Программист", "Чини баги в настоящей IDE: серия ответов даёт бонус", coder2];
+  JOBS.prg = ["💻 Программист", "Собери программу из блоков кода: пройди тесты и задеплой", coder3];
 })();
