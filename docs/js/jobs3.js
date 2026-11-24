@@ -65,7 +65,7 @@
       o.connect(g); g.connect(AC.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + d); o.stop(AC.currentTime + d);
     } catch (e) {}
   }
-  const sfx = {
+  const sfx = window.SFX = {
     tap() { beep(660, 0.05); try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred("light"); } catch (e) {} },
     ok() { beep(523, 0.12); setTimeout(() => beep(784, 0.18), 110); haptic("success"); },
     bad() { beep(180, 0.3, "sawtooth", 0.05); haptic("error"); }
