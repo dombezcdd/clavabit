@@ -92,7 +92,7 @@
     { lvl: 2, file: "pal.py", task: "Проверь, палиндром ли слово", tests: ["pal('шалаш') is True", "pal('дом') is False"],
       code: ["def pal(w):", "    rev = w[::-1]", "    if rev == w:", "        return True", "    return False"], fake: ["    rev = w", "        return False"] }
   ];
-  const LV = [{ name: "Стажёр", sec: 45 }, { name: "Миддл", sec: 55 }, { name: "Сеньор", sec: 65 }];
+  const LV = [{ name: "Стажёр", sec: 70 }, { name: "Миддл", sec: 85 }, { name: "Сеньор", sec: 100 }];
 
   function coder3(done) {
     const set = [0, 1, 2].map(l => pick(PROGS.filter(p => p.lvl === l)));
@@ -104,11 +104,11 @@
     function level() {
       const P = set[li], L = LV[li], n = P.code.length;
       lock = false; runs = 0; wrap.innerHTML = "";
-      const slots = new Array(n).fill(null);                   // индексы блоков в слотах
-      const pool = shuffle(P.code.map((t, i) => ({ t, i, fake: false })).concat(P.fake.map((t, i) => ({ t, i: -1 - i, fake: true }))));
+      const slots = new Array(n).fill(null); slots[0] = 0;       // первая строка (def) уже стоит                   // индексы блоков в слотах
+      const pool = shuffle(P.code.map((t, i) => ({ t, i, fake: false })).concat(P.fake.slice(0, li === 2 ? 2 : 1).map((t, i) => ({ t, i: -1 - i, fake: true }))));
       const pr = ["lo'>LOW", "md'>MEDIUM", "hi'>HIGH"][li], key = "PAY-" + (100 + Math.floor(Math.random() * 900));
-      const task = el("div", "jira", "<div class='r1'><span class='key'>" + key + "</span><span class='tag " + pr + "</span><span class='tag bg'>" + (li === 2 ? "Bug" : "Task") + "</span><small style='margin-left:auto'>Уровень " + (li + 1) + "/3 · " + L.name + "</small></div><p>" + P.task + ": релиз в 18:00</p><small>💬 Тимлид: «Собери функцию из блоков, лишние блоки не нужны»</small>");
-      const cb = el("div", "combo off", "попыток 3 · " + L.sec + " с");
+      const task = el("div", "jira", "<div class='r1'><span class='key'>" + key + "</span><span class='tag " + pr + "</span><span class='tag bg'>" + (li === 2 ? "Bug" : "Task") + "</span><small style='margin-left:auto'>Уровень " + (li + 1) + "/3 · " + L.name + "</small></div><p>" + P.task + ": релиз в 18:00</p><small>💬 Тимлид: «Первая строка уже есть, добери остальные. Лишний блок не нужен»</small>");
+      const cb = el("div", "combo off", "попыток 5 · " + L.sec + " с");
       const ide = el("div", "ide");
       ide.innerHTML = "<div class='ttl'><i style='background:#ff5f57'></i><i style='background:#febc2e'></i><i style='background:#28c840'></i><span style='margin:0 auto'>" + P.file + " — shop-backend — VS Code</span></div>";
       const vsb = el("div", "vsb"); const edc = el("div", "ed");
@@ -132,7 +132,7 @@
         slots.forEach((bi, si) => {
           const ln = el("span", "line", ""); ln.style.minHeight = "22px";
           if (bi == null) { ln.innerHTML = "<span class='cm'>" + esc("# строка " + (si + 1)) + "</span>"; ln.style.opacity = .55; }
-          else { const b = pool.find(x => x.i === bi); ln.innerHTML = hl(b.t); ln.onclick = () => { if (lock) return; slots[si] = null; sfx.tap(); draw(); }; ln.style.cursor = "pointer"; }
+          else { const b = pool.find(x => x.i === bi); ln.innerHTML = hl(b.t); ln.onclick = () => { if (lock || si === 0) return; slots[si] = null; sfx.tap(); draw(); }; ln.style.cursor = si === 0 ? "default" : "pointer"; }
           ln.id = "s" + si; src.appendChild(ln);
         });
         pool.forEach(b => {
@@ -154,9 +154,9 @@
         if (okAll) { win(); return; }
         sfx.bad(); setCi(["ok", "no"]);
         tb.innerHTML = "<span class='d'>$</span> pytest " + P.file + "<br>" + P.tests.map(t => "<span class='r'>✗ " + esc(t) + "</span>").join("<br>") +
-          "<br><span class='r'>FAILED</span> зелёные строки на месте, красные нет · попытка " + runs + "/3";
-        cb.className = "combo off"; cb.textContent = "попыток " + Math.max(0, 3 - runs);
-        if (runs >= 3) { give(false); return; }
+          "<br><span class='r'>FAILED</span> зелёные строки на месте, красные нет · попытка " + runs + "/5";
+        cb.className = "combo off"; cb.textContent = "попыток " + Math.max(0, 5 - runs);
+        if (runs >= 5) { give(false); return; }
         setTimeout(() => { slots.forEach((bi, si) => { if (bi !== si) slots[si] = null; }); draw(); }, 900);   // верные строки остаются
       };
       function win() { sfx.ok(); setCi(["ok", "ok", "run"]); setTimeout(() => setCi(["ok", "ok", "ok", "run"]), 500); setTimeout(() => { setCi(["ok", "ok", "ok", "ok"]); sfx.ok(); }, 1000); const dot = wrap.querySelector("#dot"); dot.className = "okc"; dot.textContent = "✓";
@@ -165,7 +165,7 @@
       function give(ok) {
         lock = true; cancelAnimationFrame(raf); draw();
         const left = clamp(L.sec - ((performance.now() - t0) / 1000) * FAST, 0, L.sec);
-        const pts = ok ? clamp(100 - (runs - 1) * 20 - 25 * (1 - left / L.sec), 35, 100) : 0;
+        const pts = ok ? clamp(100 - (runs - 1) * 10 - 25 * (1 - left / L.sec), 50, 100) : 0;
         total += pts; pill.textContent = Math.round(total / 3);
         if (!ok) { slots.forEach((_, si) => { slots[si] = si; }); draw(); slots.forEach((_, si) => { const ln = src.children[si]; ln.classList.add("fixed"); });
           tb.innerHTML += "<br><span class='y'>Вот правильный порядок</span>"; }
