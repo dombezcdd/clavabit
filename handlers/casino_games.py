@@ -81,11 +81,27 @@ async def bj_start(bot, chat, me, bet, reply_to=None, msg_id=None):
     BJ[(chat, uid)] = g
     await _quest(bot, uid, chat)
     if hand_value(g["p"]) == 21:
+        from services.casino import LAST_MSG
+        g["msg"] = msg_id or LAST_MSG.get((chat, uid))
         return await _bj_finish(bot, chat, uid, reply_to=reply_to)
     buf = await asyncio.to_thread(bj_card, g["p"], g["d"], True, bet, None, name=g["name"])
-    m = await bot.send_photo(chat, buf, caption=f"🃏 <b>Блэкджек</b> · {link(uid, g['name'])}\nТвой ход. Ещё, стоп или удвоить?",
-                             parse_mode=HTML, reply_markup=_bj_kb(g, uid), reply_to_message_id=reply_to)
+    cap = f"🃏 <b>Блэкджек</b> · {link(uid, g['name'])}\nТвой ход. Ещё, стоп или удвоить?"
+    kb = _bj_kb(g, uid)
+    from services.casino import LAST_MSG
+    old_id = msg_id or LAST_MSG.get((chat, uid))
+    if old_id:
+        try:
+            await bot.edit_message_media(chat_id=chat, message_id=old_id, media=InputMediaPhoto(buf, caption=cap, parse_mode=HTML),
+                                         reply_markup=kb, read_timeout=25, write_timeout=25)
+            g["msg"] = old_id
+            LAST_MSG[(chat, uid)] = old_id
+            return None
+        except Exception as e:
+            log.info("bj edit: %r", e)
+            buf.seek(0)
+    m = await bot.send_photo(chat, buf, caption=cap, parse_mode=HTML, reply_markup=kb, reply_to_message_id=reply_to)
     g["msg"] = m.message_id
+    LAST_MSG[(chat, uid)] = m.message_id
     return None
 
 
@@ -123,7 +139,9 @@ async def _bj_finish(bot, chat, uid, forced=False, reply_to=None):
         if g["msg"]:
             await bot.edit_message_media(chat_id=chat, message_id=g["msg"], media=InputMediaPhoto(buf, caption=cap, parse_mode=HTML), reply_markup=kb)
         else:
-            await bot.send_photo(chat, buf, caption=cap, parse_mode=HTML, reply_markup=kb, reply_to_message_id=reply_to)
+            mm = await bot.send_photo(chat, buf, caption=cap, parse_mode=HTML, reply_markup=kb, reply_to_message_id=reply_to)
+            from services.casino import LAST_MSG
+            LAST_MSG[(chat, uid)] = mm.message_id
     except Exception as e:
         log.warning("bj finish: %r", e)
         try:
@@ -269,6 +287,10 @@ async def _crash_run(bot, chat):
             cap = f"💥 Ракета взорвалась на <b>x{rd['crash']:.2f}</b>\n" + (f"Выплачено: +{tot_win}\n" if tot_win else "") + \
                   (f"Сгорело ставок: {tot_lose}\n" if tot_lose else "") + f"<i>{phrase('win' if tot_win > tot_lose else 'lose')}</i>"
             await bot.send_animation(chat, bio, caption=cap, parse_mode=HTML, read_timeout=25, write_timeout=25)
+            try:
+                await bot.delete_message(chat, rd["msg"])      # текстовое табло заменяем одной анимацией
+            except Exception:
+                pass
         except Exception as e:
             log.warning("crash gif: %r", e)
     except Exception:
@@ -395,6 +417,10 @@ async def _table_run(bot, chat):
             bio = io.BytesIO(data)
             bio.name = "table.gif"
             await bot.send_animation(chat, bio, caption=cap[:1000], parse_mode=HTML, read_timeout=25, write_timeout=25)
+            try:
+                await bot.delete_message(chat, t["msg"])
+            except Exception:
+                pass
         except Exception as e:
             log.warning("table gif: %r", e)
             await bot.send_message(chat, cap, parse_mode=HTML)
@@ -463,11 +489,7 @@ async def on_cg_btn(update, context):
         if act == "new":
             bet = int(p[4]) if len(p) > 4 and p[4].isdigit() else 50
             await q.answer()
-            try:
-                await q.edit_message_reply_markup(None)
-            except Exception:
-                pass
-            err = await bj_start(context.bot, chat, me, bet)
+            err = await bj_start(context.bot, chat, me, bet, msg_id=q.message.message_id)
             if err:
                 await context.bot.send_message(chat, err)
             return

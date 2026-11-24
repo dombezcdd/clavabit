@@ -95,3 +95,6 @@ def rtp_slots():
     r = sum(((SLOT_W[s] / tot) ** 3) * SLOT_PAY[s] for s in SLOT_W)
     p2 = 3 * (SLOT_W["🍒"] / tot) ** 2 * (1 - SLOT_W["🍒"] / tot)
     return r + p2 * TWO_CHERRY
+
+
+LAST_MSG = {}      # (чат, игрок) -> id его последнего сообщения казино; новые результаты пишем в него (без спама)

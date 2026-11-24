@@ -110,16 +110,45 @@ async def _gif(info):
         return None
 
 
-async def _send_result(bot, chat, reply_to, txt, kb, info):
-    """Отправляет анимацию с подписью; при сбое шлёт просто текст."""
+from services.casino import LAST_MSG as _msgs
+
+
+async def _send_result(bot, chat, reply_to, txt, kb, info, uid=None, edit_id=None):
+    """Результат с анимацией. Если есть прошлое сообщение игрока, меняем его (без спама), иначе шлём новое."""
+    from telegram import InputMediaAnimation
+    key = (chat, uid)
+    edit_id = edit_id or (_msgs.get(key) if uid else None)
     gif = await _gif(info)
+    if edit_id:
+        try:
+            if gif:
+                gif.seek(0)
+                await bot.edit_message_media(chat_id=chat, message_id=edit_id,
+                                             media=InputMediaAnimation(gif, caption=txt, parse_mode=HTML),
+                                             reply_markup=kb, read_timeout=25, write_timeout=25)
+            else:
+                await bot.edit_message_caption(chat_id=chat, message_id=edit_id, caption=txt, parse_mode=HTML, reply_markup=kb)
+            return edit_id
+        except Exception as e:
+            log.info("casino edit: %r", e)
+    m = None
     if gif:
         try:
-            return await bot.send_animation(chat, gif, caption=txt, parse_mode=HTML, reply_markup=kb,
-                                            reply_to_message_id=reply_to, read_timeout=25, write_timeout=25)
+            gif.seek(0)
+            m = await bot.send_animation(chat, gif, caption=txt, parse_mode=HTML, reply_markup=kb,
+                                         reply_to_message_id=reply_to, read_timeout=25, write_timeout=25)
         except Exception as e:
             log.warning("casino send gif: %r", e)
-    return await bot.send_message(chat, txt, parse_mode=HTML, reply_markup=kb, reply_to_message_id=reply_to)
+    if m is None:
+        m = await bot.send_message(chat, txt, parse_mode=HTML, reply_markup=kb, reply_to_message_id=reply_to)
+    if uid and m:
+        if edit_id:                                   # старое не удалось изменить: убираем его кнопки
+            try:
+                await bot.edit_message_reply_markup(chat_id=chat, message_id=edit_id, reply_markup=None)
+            except Exception:
+                pass
+        _msgs[key] = m.message_id
+    return m
 
 
 async def handle_casino_text(update, context, low, text):
@@ -220,7 +249,7 @@ async def _run(msg, bot, me, game, bet, arg):
         r = await _play(bot, msg.chat_id, me.id, disp(me), game, bet, arg)
         if len(r) == 3:
             return await msg.reply_text(r[0])
-        await _send_result(bot, msg.chat_id, msg.message_id, r[0], r[1], r[3])
+        await _send_result(bot, msg.chat_id, msg.message_id, r[0], r[1], r[3], uid=me.id)
     finally:
         _busy.discard(me.id)
 
@@ -255,10 +284,6 @@ async def on_casino_btn(update, context):
         if len(r) == 3:
             return await q.answer(r[0], show_alert=True)
         await q.answer("Крутим…")
-        try:
-            await q.edit_message_reply_markup(None)       # у старого результата кнопки убираем, чтобы не копились
-        except Exception:
-            pass
-        await _send_result(context.bot, q.message.chat_id, None, r[0], r[1], r[3])
+        await _send_result(context.bot, q.message.chat_id, None, r[0], r[1], r[3], uid=me.id, edit_id=q.message.message_id)
     finally:
         _busy.discard(me.id)
