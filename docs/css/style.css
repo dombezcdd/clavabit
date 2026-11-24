@@ -31,3 +31,21 @@ header .back.show{display:block}
 .card .ic{font-size:34px}.card b{font-size:17px;display:block}.card span{color:var(--mut);font-size:13px}
 .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
 .btn.sm{min-width:0;padding:11px 16px;font-size:15px;border-radius:14px}
+/* ===== тёмный неон ===== */
+:root{--bg1:#0b0a1a;--bg2:#1a1038;--card:#ffffff10;--line:#8b7bff33;--tx:#f4f1ff;--mut:#a9a3cf;--acc:#ffb84d;--ok:#35f5a0;--bad:#ff5c7a;--neon:#7c6bff;--neon2:#22d3ee}
+html,body{background:radial-gradient(900px 500px at 85% -10%,#5b3df555,transparent 60%),radial-gradient(700px 500px at -10% 110%,#0ea5c944,transparent 60%),linear-gradient(160deg,var(--bg1),var(--bg2))}
+.pill{background:linear-gradient(135deg,#7c6bff33,#22d3ee22);border-color:#7c6bff77;box-shadow:0 0 14px #7c6bff44;backdrop-filter:blur(8px)}
+#bar{background:#ffffff14;box-shadow:inset 0 0 6px #0008}#bar i{background:linear-gradient(90deg,var(--neon2),var(--neon),#ff4fd8);box-shadow:0 0 12px var(--neon)}
+.prompt,.card,.opt{background:linear-gradient(160deg,#ffffff14,#ffffff08);border:1px solid var(--line);backdrop-filter:blur(10px);box-shadow:0 6px 24px #0006}
+.card{transition:transform .15s,box-shadow .2s,border-color .2s;animation:rise .4s both}
+.card:nth-child(2){animation-delay:.04s}.card:nth-child(3){animation-delay:.08s}.card:nth-child(4){animation-delay:.12s}.card:nth-child(5){animation-delay:.16s}.card:nth-child(6){animation-delay:.2s}
+.card:hover,.card:active{border-color:var(--neon);box-shadow:0 0 22px #7c6bff55,0 6px 24px #0006}
+.card .ic{filter:drop-shadow(0 0 8px #7c6bffaa)}
+.opt{transition:transform .12s,border-color .2s,box-shadow .2s}.opt:active{border-color:var(--neon2);box-shadow:0 0 16px #22d3ee66}
+.opt.ok{background:#35f5a026;border-color:var(--ok);box-shadow:0 0 18px #35f5a066}.opt.bad{background:#ff5c7a26;border-color:var(--bad);box-shadow:0 0 18px #ff5c7a66}
+.btn{background:linear-gradient(90deg,#7c6bff,#22d3ee);color:#06041a;box-shadow:0 0 22px #7c6bff88;transition:transform .12s,box-shadow .2s}
+.btn:active{transform:scale(.97);box-shadow:0 0 30px #22d3ee99}.btn.sec{background:#ffffff10;color:var(--tx);box-shadow:none}
+.job{text-shadow:0 0 14px #7c6bffaa}.big{text-shadow:0 0 28px #7c6bff}.stars{filter:drop-shadow(0 0 10px #ffb84d)}
+header .back{background:#ffffff10;border-color:var(--line)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+#stage>*{animation:rise .3s both}
