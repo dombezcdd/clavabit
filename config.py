@@ -9,8 +9,8 @@ from telegram.constants import ParseMode
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 TOKEN = ""                    # вставь токен от @BotFather ИЛИ положи его в файл token.txt рядом с bot.py
-CHAT_ID = int(os.environ.get("CHAT_ID") or -1004318004202)          # основной чат (можно задать в переменных хоста)
-TEST_CHAT_ID = int(os.environ.get("TEST_CHAT_ID") or -1002299660550)                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
+CHAT_ID = int(os.environ.get("CHAT_ID") or -1002299660550)          # основной чат (можно задать в переменных хоста)
+TEST_CHAT_ID = int(os.environ.get("TEST_CHAT_ID") or -1004318004202)                # id тестовой группы (0 = нет). Там бот тоже отвечает на команды
 OWNER_USERNAME = "bloya"        # владелец (без @)
 OWNER_ID = (os.environ.get("OWNER_ID") or "").strip()   # числовой id владельца (надёжнее имени), можно задать в переменных хостинга
 CHANNEL = "@clubClaveka"
@@ -62,4 +62,4 @@ MONO_MAX_ROUNDS = 25       # кругов до подсчёта богатств
 MONO_TURN_TIMEOUT = 120    # секунд на ход, потом бот сам бросит кубики
 MONO_IDLE_END = 1200       # секунд без действий людей: игра закрывается
 
-BOT_VERSION = 96          # показывается в /id и в логе при запуске
+BOT_VERSION = 97          # показывается в /id и в логе при запуске
