@@ -24,6 +24,9 @@ def coins_of(uid):
     return (r["coins"] or 0) if r else 0
 
 
+SHOP_EXTRA = 15      # надбавка к цене каждого подарка в магазине
+
+
 def shop_price(it):
     mult = SHOP_PRICE_MULT
     try:
@@ -32,4 +35,4 @@ def shop_price(it):
             mult *= 0.8
     except Exception:
         pass
-    return max(1, int(it["price"] * mult))
+    return max(1, int(it["price"] * mult)) + SHOP_EXTRA
