@@ -26,6 +26,8 @@ M = {
 ALIAS = {"попа метр": "попаметр", "пися метр": "писяметр"}
 
 
+OBJ = {"попаметр": "к попе", "писяметр": "к писе", "мозгометр": "к уму", "красотометр": "к красоте", "кринжометр": "к кринжу",
+       "лютометр": "к лютости", "ленометр": "к лени", "сигмаметр": "к сигме"}
 GAIN = {"см": (1, 3, 300), "IQ": (-3, 4, 200), "%": (-5, 8, 100)}   # прирост за час: мин, макс; потолок
 HOUR = 3600
 _ready = [False]
@@ -100,8 +102,8 @@ async def handle_meter_text(update, context, low, text):
     d, left = _grow(me.id, low)
     unit = M[low][2]
     if d is None:
-        note = f"\n⏳ Следующий замер через {left // 60 + 1} мин."
-    else:
-        note = f"  ({'+' if d >= 0 else ''}{d} {unit} за час)" if d else "  (без изменений)"
-    await reply(update, _line(me.id, disp(me), low, note))
+        await reply(update, _line(me.id, disp(me), low, f"\n⏳ Кд 1 час, следующий замер через {left // 60 + 1} мин."))
+        return True
+    head = (f"<b>{'+' if d > 0 else ''}{d} {unit} {OBJ[low]}!</b>" if d else "<b>Без изменений 😐</b>")
+    await reply(update, head + "\n" + _line(me.id, disp(me), low))
     return True
