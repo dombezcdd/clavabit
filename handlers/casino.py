@@ -118,6 +118,13 @@ async def _send_result(bot, chat, reply_to, txt, kb, info, uid=None, edit_id=Non
     from telegram import InputMediaAnimation
     key = (chat, uid)
     edit_id = edit_id or (_msgs.get(key) if uid else None)
+    try:                                               # сообщение с идущим блэкджеком не трогаем: там живые кнопки
+        from handlers.casino_games import BJ
+        g = BJ.get(key)
+        if g and g.get("msg") == edit_id:
+            edit_id = None
+    except Exception:
+        pass
     gif = await _gif(info)
     if edit_id:
         try:

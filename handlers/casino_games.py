@@ -69,7 +69,21 @@ async def bj_start(bot, chat, me, bet, reply_to=None, msg_id=None):
     uid = me.id
     old = BJ.get((chat, uid))
     if old and time.time() - old["t"] < 240:
-        return "Сначала доиграй текущую раздачу (кнопки под картой)"
+        # раздача ещё идёт: вместо отказа заново показываем карты с кнопками (прошлое сообщение могло быть заменено)
+        try:
+            buf = await asyncio.to_thread(bj_card, old["p"], old["d"], True, old["bet"], None, name=old["name"])
+            m = await bot.send_photo(chat, buf, caption=f"🃏 <b>Блэкджек</b> · {link(uid, old['name'])}\nТвоя раздача ещё идёт. Ещё, стоп или удвоить?",
+                                     parse_mode=HTML, reply_markup=_bj_kb(old, uid), reply_to_message_id=reply_to)
+            if old.get("msg") and old["msg"] != m.message_id:
+                try:
+                    await bot.edit_message_reply_markup(chat_id=chat, message_id=old["msg"], reply_markup=None)
+                except Exception:
+                    pass
+            old["msg"] = m.message_id
+            return None
+        except Exception as e:
+            log.warning("bj resend: %r", e)
+            return "Сначала доиграй текущую раздачу (кнопки под картой)"
     err = _check_bet(uid, bet)
     if err:
         return err
