@@ -8,7 +8,7 @@ from telegram import InlineKeyboardButton
 
 from core.durations import fmt_minutes
 from core.helpers import reply
-from core.utils import disp, esc, link, urow
+from core.utils import disp, esc, link, today, urow
 from database.db import db
 from handlers.common import life_send, own_kb
 from services.court import jail_left
@@ -17,7 +17,7 @@ from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
 from services.virus import is_sick, sick_for_shift
 from services.xp import give_xp
-from services.jobs import CAREER, shown_cd, PAY_GROW_CAP, PAY_GROW_MAX, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
+from services.jobs import CAREER, CAREER_BONUS, MAX_SHIFTS_DAY, shown_cd, PAY_GROW_CAP, PAY_GROW_MAX, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
 from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
@@ -53,6 +53,23 @@ async def life_jobs_find(update, context):
     await life_send(update, context, "\n".join(lines), kb=kb)
 
 
+
+def _work_gate(uid):
+    """Текст отказа, если работать пока нельзя: лимит смен в день или не выполнены ежедневные задания."""
+    from services.xp import QUEST_TITLES, progress, quests_for
+    d = today()
+    prog = progress(uid, d)
+    if prog["shifts"] >= MAX_SHIFTS_DAY:
+        return f"😴 На сегодня хватит: максимум {MAX_SHIFTS_DAY} смены в день. Выходи завтра!"
+    done = {r["qid"] for r in db.execute("SELECT qid FROM quest_done WHERE day=? AND user_id=?", (d, uid))}
+    need = [(q, n) for q, n in quests_for(d) if q != "shifts" and q not in done]
+    if need:
+        lines = [f"• {QUEST_TITLES[q].format(n=n)}: {min(prog.get(q, 0), n)}/{n}" for q, n in need]
+        return ("🔒 Сначала выполни задания дня, потом на смену пустят:\n" + "\n".join(lines) +
+                "\n\nВсе задания: «квесты»")
+    return None
+
+
 async def life_work(update, context):
     me = update.effective_user
     row = urow(me.id)
@@ -65,6 +82,9 @@ async def life_work(update, context):
     if t and t["expires"] > time.time():
         return await reply(update, "Ты уже на смене, сначала закончи задание выше ☝️ "
                                    f"(осталось {fmt_minutes((t['expires'] - time.time()) // 60 + 1)})")
+    block = _work_gate(me.id)
+    if block:
+        return await reply(update, block)
     name, base, cd, req = JOBS[row["job"]]
     left = (row["last_work"] or 0) + job_cd_hours(row) * 3600 - time.time()
     if left > 0:
@@ -159,8 +179,8 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
     note += f"\n⭐ +{xp_n} опыта"
     for _i, (_n, _nm) in enumerate(CAREER):
         if _i and _n == shifts:
-            give_coins(uid, 25 * _i)
-            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{25 * _i} славКоин"
+            give_coins(uid, CAREER_BONUS * _i)
+            note += f"\n🎖 Повышение! Теперь ты: <b>{_nm}</b> · бонус +{CAREER_BONUS * _i} славКоин"
     spark_note = ""
     pr_ = pair_of(uid)
     if pr_:
