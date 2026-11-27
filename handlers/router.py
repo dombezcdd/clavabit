@@ -311,7 +311,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     and msg.reply_to_message.from_user.id != user.id
                     and not msg.reply_to_message.from_user.is_bot)
     events = add_counted(user.id, msg.message_id, is_reply, text)
-    if events is not None and len(text) >= 60:
+    if events is not None and len(text) >= 15:
         from services.xp import bump
         bump(user.id, "longmsg")
     if is_reply:

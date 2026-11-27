@@ -92,12 +92,16 @@ def house_bonus_pct(uid):
 SHIFT_SCALE = 0.5      # смены короче в 2 раза (пауза меньше), зарплата за смену тоже в 2 раза меньше
 
 
+def _top(base):
+    return 1 / TOP_DIV if base >= TOP_BASE else 1.0
+
+
 def shown_pay(base):
-    return max(1, int(base * JOB_PAY_MULT * SHIFT_SCALE))
+    return max(1, int(base * JOB_PAY_MULT * SHIFT_SCALE * _top(base)))
 
 
 def shown_cd(cd):
-    return cd * SHIFT_SCALE
+    return max(MIN_CD_H, cd * SHIFT_SCALE)
 
 
 BIZ_JOB_PAY_DIV = 1.5     # у владельца бизнеса зарплата на работе меньше в столько раз
@@ -135,7 +139,7 @@ def job_pay(row, shift_started=None):
         pass
     if has_business(row["user_id"]):
         pay_mult /= BIZ_JOB_PAY_DIV
-    return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE * pay_mult))
+    return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE * pay_mult * _top(base)))
 
 
 PAY_GROW_CAP = 200     # на стольких сменах бонус за стаж достигает максимума
@@ -156,6 +160,7 @@ def job_cd_hours(row):
             hours *= VIP_CD_MULT
     except Exception:
         pass
+    hours = max(MIN_CD_H, hours)
     if has_business(row["user_id"]):
         hours += BIZ_JOB_CD_H
     return hours
@@ -253,7 +258,9 @@ def load_custom_jobs():
 
 # ---------- карьера: должность растёт со сменами ----------
 CAREER_BONUS = 12      # бонус за повышение = это число × номер звания
-MAX_SHIFTS_DAY = 4     # максимум смен в сутки
+MAX_SHIFTS_DAY = 7     # максимум смен в сутки
+MIN_CD_H = 2           # пауза между сменами не меньше стольких часов
+TOP_BASE, TOP_DIV = 110, 1.7   # «крутые» профессии (база от 100): зарплата в 1,7 раза меньше
 CAREER = [(0, "Стажёр"), (10, "Специалист"), (30, "Старший"), (70, "Эксперт"), (150, "Мастер")]
 
 
