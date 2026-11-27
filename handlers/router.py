@@ -22,7 +22,7 @@ from handlers.mafia import handle_mafia_text
 from handlers.casino import handle_casino_text
 from handlers.live import handle_live_text
 from handlers.vip import handle_vip_text
-from handlers.admin_fun import handle_adminfun_text
+from handlers.admin_fun import handle_adminfun_text, handle_market_private
 from handlers.memometer import handle_meter_text
 from handlers.passcmd import handle_ach_text, handle_pass_text
 from handlers.farm import handle_farm_text
@@ -161,6 +161,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if chat.type == "private":
         if is_owner(user) and await handle_admin_text(update, context, msg.text.strip().lower(), msg.text.strip()):
+            return
+        if is_owner(user) and await handle_market_private(update, context, msg.text.strip().lower()):
             return
         return await private_menu(update)
     if chat.id not in ALLOWED:

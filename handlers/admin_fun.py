@@ -197,7 +197,28 @@ async def _market(update, args, up):
     lines = [("🚀 <b>Рынок взлетает!</b>" if up else "💥 <b>Обвал на бирже!</b>")]
     for s, old, new in res:
         lines.append(f"{'📈' if up else '📉'} <b>{s['sym']}</b> {old:.2f} → {new:.2f} ({(new / old - 1) * 100:+.1f}%)")
-    await reply(update, "\n".join(lines))
+    txt = "\n".join(lines)
+    if update.effective_chat.type == "private":          # из лички: игрок видит результат у себя и в основном чате
+        await reply(update, txt + "\n\n(отправлено в основной чат)")
+        try:
+            from config import CHAT_ID
+            await update.get_bot().send_message(CHAT_ID, txt, parse_mode=HTML)
+        except Exception as e:
+            log.warning("market announce: %r", e)
+    else:
+        await reply(update, txt)
+
+
+async def handle_market_private(update, context, low):
+    """Команды биржи владельца в личке бота."""
+    w = low.split()
+    if not w or not is_owner(update.effective_user):
+        return False
+    up = w[0] in ("поднять", "взлёт", "взлет", "памп")
+    if w[0] in ("обвал", "крах") or (up and len(w) <= 3):
+        await _market(update, w[1:], up)
+        return True
+    return False
 
 
 async def handle_adminfun_text(update, context, low, text):
