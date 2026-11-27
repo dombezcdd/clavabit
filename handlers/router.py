@@ -26,6 +26,7 @@ from handlers.admin_fun import handle_adminfun_text
 from handlers.memometer import handle_meter_text
 from handlers.passcmd import handle_ach_text, handle_pass_text
 from handlers.farm import handle_farm_text
+from handlers.chips import handle_chips_text
 from handlers.petbattle import handle_petbattle_text
 from handlers.payments import handle_pay_text
 from handlers.admin import handle_admin_text
@@ -227,6 +228,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if await handle_ach_text(update, context, cmd_low, text):
+        return
+
+    if await handle_chips_text(update, context, cmd_low, text):
         return
 
     if await handle_farm_text(update, context, cmd_low, text):
