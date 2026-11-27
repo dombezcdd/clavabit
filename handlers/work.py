@@ -50,6 +50,15 @@ async def life_jobs_find(update, context):
     btns += [InlineKeyboardButton(f"🔒 {name} · {shown_pay(pay)}", callback_data=f"life:job:{me.id}:{k}")
              for k, name, pay, cd, _ in locked]
     kb = own_kb([btns[i:i + 2] for i in range(0, len(btns), 2)]) if btns else None
+    try:
+        from handlers.finance import _send_photo
+        from services.life_cards import jobs_card
+        items = [(k, name, shown_pay(pay), shown_cd(cd), False) for k, name, pay, cd, _ in avail] + \
+                [(k, name, shown_pay(pay), shown_cd(cd), True) for k, name, pay, cd, _ in locked]
+        cap = "\n".join(lines[:-2] if len(lines) > 2 else lines)[:1000]
+        return await _send_photo(update.effective_message, lambda: jobs_card(items, row["job"]), cap, reply_markup=kb)
+    except Exception:
+        pass
     await life_send(update, context, "\n".join(lines), kb=kb)
 
 

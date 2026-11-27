@@ -28,6 +28,14 @@ async def life_houses(update, context):
         if url:
             r.append(InlineKeyboardButton("👀 Посмотреть", url=url))
         btns.append(r)
+    try:
+        from handlers.finance import _send_photo
+        from services.life_cards import houses_card
+        cap = "🏠 <b>Недвижимость</b>\nЖильё даёт прибавку к зарплате и общее для супругов. Старое жильё продаётся за 50%."
+        return await _send_photo(update.effective_message, lambda: houses_card(HOUSES, cur, row["coins"] or 0), cap,
+                                 reply_markup=own_kb(btns))
+    except Exception:
+        pass
     await life_send(update, context, "\n".join(lines), kb=own_kb(btns))
 
 
