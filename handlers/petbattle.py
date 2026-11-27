@@ -14,7 +14,7 @@ from core.antispam import cooldown
 from core.helpers import reply, target_user
 from core.utils import disp, esc, link, today, touch
 from services import petbattle as pb
-from services.economy import COIN, coins_of, give_coins
+from services.casino import chips_add, chips_of
 from services.jobs import my_pets
 
 log = logging.getLogger("petbattle")
@@ -47,7 +47,7 @@ async def handle_petbattle_text(update, context, low, text):
         return True
     bet = int(m.group(1) or 0)
     if bet > MAX_BET:
-        await reply(update, f"Ставка не больше {MAX_BET} {COIN}")
+        await reply(update, f"Ставка не больше {MAX_BET} 🪙")
         return True
     day = today()
     fa, fb = pb.best_pet(my_pets(me.id), day), pb.best_pet(my_pets(foe.id), day)
@@ -60,8 +60,8 @@ async def handle_petbattle_text(update, context, low, text):
     if pb.fights_today(me.id, day) >= pb.DAILY_LIMIT:
         await reply(update, f"Сегодня уже {pb.DAILY_LIMIT} боёв, питомцу нужен отдых. Завтра снова")
         return True
-    if bet and coins_of(me.id) < bet:
-        await reply(update, f"Для ставки нужно {bet} {COIN}, у тебя {coins_of(me.id)}")
+    if bet and chips_of(me.id) < bet:
+        await reply(update, f"Для ставки нужно {bet} 🪙, у тебя {chips_of(me.id)}")
         return True
     if not cooldown(("pbc", me.id), 60):
         await reply(update, "Подожди минуту перед новым вызовом")
@@ -69,7 +69,7 @@ async def handle_petbattle_text(update, context, low, text):
     chat = update.effective_chat.id
     txt = (f"⚔ {link(me.id, disp(me))} вызывает {link(foe.id, disp(foe))} на бой питомцев!\n"
            f"{esc(fa['name'])} ({fa['kind']}, ур. {fa['lvl']}) против {esc(fb['name'])} ({fb['kind']}, ур. {fb['lvl']})\n"
-           + (f"💰 Ставка: <b>{bet}</b> {COIN} с каждого\n" if bet else "🏆 Победитель получает приз от бота\n") + "У тебя 3 минуты, чтобы принять.")
+           + (f"💰 Ставка: <b>{bet}</b> 🪙 с каждого (фишки)\n" if bet else "🏆 Победитель получает приз от бота\n") + "У тебя 3 минуты, чтобы принять.")
     try:
         buf = await asyncio.to_thread(pb.battle_card, fa, fb, fa["hp"], fb["hp"], (disp(me), disp(foe)), [f"{fa['name']} против {fb['name']}"], None, None, "ВЫЗОВ НА БОЙ", bet)
         await update.effective_message.reply_photo(buf, caption=txt, parse_mode=HTML, reply_markup=_kb(me.id, foe.id, bet))
@@ -121,8 +121,8 @@ async def on_pb_btn(update, context):
     if not fa or not fb:
         CH.pop(key, None)
         return await q.answer("У одного из бойцов больше нет питомца", show_alert=True)
-    if bet and (coins_of(a) < bet or coins_of(b) < bet):
-        return await q.answer(f"На ставку нужно {bet} {COIN} у обоих", show_alert=True)
+    if bet and (chips_of(a) < bet or chips_of(b) < bet):
+        return await q.answer(f"На ставку нужно {bet} 🪙 у обоих", show_alert=True)
     if pb.fights_today(b, day) >= pb.DAILY_LIMIT:
         return await q.answer("Твой питомец устал на сегодня", show_alert=True)
     CH.pop(key, None)
@@ -130,7 +130,7 @@ async def on_pb_btn(update, context):
     from services.relations import uname
     na, nb = uname(a), disp(me)
     if bet:
-        give_coins(a, -bet, commit=False); give_coins(b, -bet)
+        chips_add(a, -bet); chips_add(b, -bet)
     sa, sb = copy.deepcopy(fa), copy.deepcopy(fb)
     frames, win = pb.simulate(sa, sb)
     # кадры: старт + до 3 промежуточных + финал
@@ -148,10 +148,10 @@ async def on_pb_btn(update, context):
             wn, ln = (na, nb) if win == "a" else (nb, na)
             wp = (fa if win == "a" else fb)
             prize = bet * 2 if bet else 25
-            give_coins(wu, prize)
+            chips_add(wu, prize)
             pb.record(wu, True, day); pb.record(lu, False, day)
             cap = (f"🏆 {link(wu, wn)} побеждает! {esc(wp['name'])} молодец.\n"
-                   f"Приз: <b>+{prize}</b> {COIN}" + (f"\n{link(lu, ln)} теряет ставку {bet}" if bet else ""))
+                   f"Приз: <b>+{prize}</b> 🪙" + (f"\n{link(lu, ln)} теряет ставку {bet}" if bet else ""))
         try:
             await msg.edit_media(InputMediaPhoto(buf, caption=cap, parse_mode=HTML))
         except Exception as e:
