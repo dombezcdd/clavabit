@@ -139,6 +139,11 @@ def job_pay(row, shift_started=None):
         pass
     if has_business(row["user_id"]):
         pay_mult /= BIZ_JOB_PAY_DIV
+    try:
+        from services.needs import heavy_mult
+        pay_mult *= heavy_mult(row["user_id"])
+    except Exception:
+        pass
     return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE * pay_mult * _top(base)))
 
 

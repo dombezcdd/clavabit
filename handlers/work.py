@@ -140,6 +140,11 @@ async def life_work(update, context):
                                           url=mini_link(context.bot.username, sid))])
         hint += "\n🎮 Или пройди мини-игру смены по кнопке: чем лучше результат, тем выше оплата."
     kb = own_kb(rows) if rows else None
+    try:
+        from handlers.needs import banner
+        hint += banner(me.id)
+    except Exception:
+        pass
     await life_send(update, context, f"{link(me.id, disp(me))}, новое задание!\n{text}{hint}", key="раб:" + job,
                     api="thumbsup", gif=JOB_GIF.get(job), kb=kb)
 
