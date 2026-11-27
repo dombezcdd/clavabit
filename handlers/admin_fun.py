@@ -240,6 +240,35 @@ async def _announce_gifs(bot, chat, res, up, txt, quiet=False):
             log.warning("market announce: %r", e)
 
 
+async def _reset(update, args):
+    """вернуть [тикер|все] — цены к исходным"""
+    from services.finance import admin_reset, find_stock
+    target = None
+    for a in args:
+        if a not in ("все", "всё", "всех", "рынок", "акции", "акцию"):
+            target = a
+    if target and not find_stock(target):
+        return False
+    res = [r for r in admin_reset(target) if abs(r[2] / r[1] - 1) > 0.001]
+    if not res:
+        await reply(update, "Цены и так на исходном уровне")
+        return True
+    lines = ["♻️ <b>Цены возвращены к исходным</b>"]
+    for s, old, new in res:
+        lines.append(f"{'📈' if new >= old else '📉'} <b>{s['sym']}</b> {old:.2f} → {new:.2f} ({(new / old - 1) * 100:+.1f}%)")
+    txt = "\n".join(lines)
+    bot = update.get_bot()
+    dest = update.effective_chat.id
+    if update.effective_chat.type == "private":
+        from config import CHAT_ID
+        dest = CHAT_ID
+        await reply(update, txt + "\n\n(отправлено в основной чат)")
+    movers = [r for r in res]
+    up = sum(r[2] - r[1] for r in movers) >= 0
+    await _announce_gifs(bot, dest, res, up, txt)
+    return True
+
+
 async def handle_market_private(update, context, low):
     """Команды биржи владельца в личке бота."""
     w = low.split()
@@ -249,6 +278,8 @@ async def handle_market_private(update, context, low):
     if w[0] in ("обвал", "крах") or (up and len(w) <= 3):
         await _market(update, w[1:], up)
         return True
+    if w[0] in ("вернуть", "сбросить") and len(w) <= 3:
+        return bool(await _reset(update, w[1:]))
     return False
 
 
@@ -286,6 +317,8 @@ async def handle_adminfun_text(update, context, low, text):
         await _gift(update, context)
     elif w[0] in ("обвал", "крах") or (w[0] in ("поднять", "взлёт", "взлет", "памп") and len(w) <= 3):
         await _market(update, args, w[0] in ("поднять", "взлёт", "взлет", "памп"))
+    elif w[0] in ("вернуть", "сбросить") and len(w) <= 3 and await _reset(update, args):
+        pass
     elif w[0] == "титул":
         await _title(update, context, text.split()[1:])
     elif low in ("тревога", "фейк тревога", "мафия тревога"):

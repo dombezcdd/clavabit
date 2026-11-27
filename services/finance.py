@@ -77,7 +77,18 @@ STOCKS = [   # (тикер, название, базовая цена, вола�
     ("SOZ", "SOzon", 70, 0.045, 0.8, ("созон", "озон")),
     ("STS", "Stesla", 200, 0.065, 0.4, ("стесла", "тесла")),
     ("SYX", "Syandex", 110, 0.040, 0.6, ("сяндекс", "яндекс")),
+    ("SBX", "Starbax", 95, 0.040, 0.5, ("старбакс", "старбакс кофе")),
+    ("SBN", "Sberbarn", 60, 0.030, 0.4, ("сбербарн", "сбер")),
+    # мемкоины: дешёвые и очень нервные (движение за тик до ±25%)
+    ("SDG", "DogeSlav", 6, 0.140, 2.0, ("догслав", "доге", "дог")),
+    ("SPP", "PepeSlav", 3, 0.150, 2.2, ("пепеслав", "пепе", "лягушка")),
+    ("SGM", "SigmaCoin", 12, 0.130, 1.8, ("сигмакоин", "сигма")),
 ]
+MEME = 0.10                # волатильность от этого значения: мемкоин
+
+
+def is_meme(vol):
+    return vol >= MEME
 STOCK_TICK_SEC = 2700      # цены обновляются раз в 45 минут
 STOCK_FEE = 0.03           # комиссия при продаже
 STOCK_DAY_LIMIT = 1500     # сколько славКоинов можно вложить в акции за сутки
@@ -146,8 +157,10 @@ def tick_prices(force=False):
     out = []
     for s in db.execute("SELECT * FROM stocks").fetchall():
         ch = random.gauss(0, s["vol"]) + 0.04 * (s["base"] - s["price"]) / s["base"] + act * 0.02 * s["sens"]
-        ch = max(-0.12, min(0.12, ch))
-        new = round(min(s["base"] * 3, max(s["base"] * 0.4, s["price"] * (1 + ch))), 2)
+        lim = 0.25 if is_meme(s["vol"]) else 0.12
+        ch = max(-lim, min(lim, ch))
+        lo, hi = (0.2, 5) if is_meme(s["vol"]) else (0.4, 3)
+        new = round(min(s["base"] * hi, max(s["base"] * lo, s["price"] * (1 + ch))), 2)
         db.execute("UPDATE stocks SET prev=?, price=?, updated=? WHERE sym=?", (s["price"], new, time.time(), s["sym"]))
         db.execute("INSERT INTO stock_hist(sym,ts,price) VALUES(?,?,?)", (s["sym"], time.time(), new))
         db.execute("DELETE FROM stock_hist WHERE sym=? AND ts NOT IN "
@@ -176,6 +189,21 @@ def admin_move(target, pct, up):
         k = pct if pct else random.uniform(0.10, 0.25)
         k = k * random.uniform(0.85, 1.15) if not pct and not target else k
         new = round(max(s["base"] * 0.2, min(s["base"] * 4, s["price"] * (1 + k if up else 1 - k))), 2)
+        db.execute("UPDATE stocks SET prev=?, price=?, updated=? WHERE sym=?", (s["price"], new, time.time(), s["sym"]))
+        db.execute("INSERT INTO stock_hist(sym,ts,price) VALUES(?,?,?)", (s["sym"], time.time(), new))
+        out.append((s, float(s["price"]), new))
+    db.commit()
+    return out
+
+
+def admin_reset(target):
+    """Вернуть цену акции (или всех) к исходной. -> список (акция, старая, новая)."""
+    out = []
+    rows = [find_stock(target)] if target else db.execute("SELECT * FROM stocks").fetchall()
+    for s in rows:
+        if not s:
+            continue
+        new = float(s["base"])
         db.execute("UPDATE stocks SET prev=?, price=?, updated=? WHERE sym=?", (s["price"], new, time.time(), s["sym"]))
         db.execute("INSERT INTO stock_hist(sym,ts,price) VALUES(?,?,?)", (s["sym"], time.time(), new))
         out.append((s, float(s["price"]), new))
