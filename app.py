@@ -61,6 +61,11 @@ for _stream in (sys.stdout, sys.stderr):   # line_buffering: строки сра
 # ============================ ЗАПУСК ============================
 async def post_init(app):
     me = await app.bot.get_me()
+    try:
+        from services.premoji import setup as premoji_setup
+        await premoji_setup(app.bot)
+    except Exception as e:
+        print("Премиум-эмодзи выключены:", repr(e)[:150])
     print(f"Бот @{me.username} запущен, версия {BOT_VERSION}", flush=True)
     print(f"Основной чат: {CHAT_ID}" + (f", тестовый: {TEST_CHAT_ID}" if TEST_CHAT_ID else ""))
     oid = state_get("owner_id")
