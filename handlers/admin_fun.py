@@ -198,15 +198,46 @@ async def _market(update, args, up):
     for s, old, new in res:
         lines.append(f"{'📈' if up else '📉'} <b>{s['sym']}</b> {old:.2f} → {new:.2f} ({(new / old - 1) * 100:+.1f}%)")
     txt = "\n".join(lines)
-    if update.effective_chat.type == "private":          # из лички: игрок видит результат у себя и в основном чате
+    bot = update.get_bot()
+    dest = update.effective_chat.id
+    if update.effective_chat.type == "private":          # из лички: результат уходит в основной чат
+        from config import CHAT_ID
+        dest = CHAT_ID
         await reply(update, txt + "\n\n(отправлено в основной чат)")
+    await _announce_gifs(bot, dest, res, up, txt, quiet=update.effective_chat.type == "private")
+
+
+async def _announce_gifs(bot, chat, res, up, txt, quiet=False):
+    """Гифка графика: акция взлетает или падает. Одна акция: гифка с подписью; несколько: текст и гифки трёх самых сильных."""
+    import io
+    from services.finance import history
+    from services.stock_gif import make_gif
+    movers = sorted(res, key=lambda r: abs(r[2] / r[1] - 1), reverse=True)[:3]
+    sent = 0
+    for i, (s, old, new) in enumerate(movers):
         try:
-            from config import CHAT_ID
-            await update.get_bot().send_message(CHAT_ID, txt, parse_mode=HTML)
+            hist = history(s["sym"])[:-1][-10:]
+            pts = hist[:-1] + [old] if hist else [old]
+            pts = [float(x) for x in pts]
+            steps = 8
+            pts += [old + (new - old) * (k / steps) ** 1.4 for k in range(1, steps + 1)]
+            chg = (new / old - 1) * 100
+            data = await asyncio.to_thread(make_gif, s["sym"], s["name"], pts, new, chg)
+            if not data:
+                continue
+            bio = io.BytesIO(data)
+            bio.name = "stock.gif"
+            word = "🚀 взлетает" if up else "💥 обвал"
+            cap = txt if len(movers) == 1 else f"{word}: <b>{s['sym']}</b> {old:.2f} → {new:.2f} ({chg:+.1f}%)"
+            await bot.send_animation(chat, bio, caption=cap[:1000], parse_mode=HTML, read_timeout=25, write_timeout=25)
+            sent += 1
+        except Exception as e:
+            log.warning("market gif: %r", e)
+    if sent == 0 or len(res) > 1:                       # сводка текстом: для нескольких акций и если гифка не вышла
+        try:
+            await bot.send_message(chat, txt, parse_mode=HTML)
         except Exception as e:
             log.warning("market announce: %r", e)
-    else:
-        await reply(update, txt)
 
 
 async def handle_market_private(update, context, low):
