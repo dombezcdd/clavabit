@@ -166,6 +166,23 @@ def holding(uid, sym):
     return db.execute("SELECT * FROM holdings WHERE user_id=? AND sym=?", (uid, sym)).fetchone()
 
 
+def admin_move(target, pct, up):
+    """Владелец двигает цены: target — тикер/название или None (все). -> список (акция, старая, новая)."""
+    out = []
+    rows = [find_stock(target)] if target else db.execute("SELECT * FROM stocks").fetchall()
+    for s in rows:
+        if not s:
+            continue
+        k = pct if pct else random.uniform(0.10, 0.25)
+        k = k * random.uniform(0.85, 1.15) if not pct and not target else k
+        new = round(max(s["base"] * 0.2, min(s["base"] * 4, s["price"] * (1 + k if up else 1 - k))), 2)
+        db.execute("UPDATE stocks SET prev=?, price=?, updated=? WHERE sym=?", (s["price"], new, time.time(), s["sym"]))
+        db.execute("INSERT INTO stock_hist(sym,ts,price) VALUES(?,?,?)", (s["sym"], time.time(), new))
+        out.append((s, float(s["price"]), new))
+    db.commit()
+    return out
+
+
 PUMP_P, CRASH_P = 0.09, 0.15      # шанс взлёта и обвала после любой сделки (обвал вероятнее)
 _EVT = [""]
 

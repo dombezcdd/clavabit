@@ -181,6 +181,25 @@ async def _lot_end(bot, chat):
                                  f"Приз: <b>{prize}</b> 🪙 фишек", parse_mode=HTML)
 
 
+async def _market(update, args, up):
+    """обвал / поднять [тикер|все] [процент]"""
+    from services.finance import admin_move, find_stock
+    target, pct = None, 0.0
+    for a in args:
+        a = a.strip("%")
+        if a.isdigit():
+            pct = max(1, min(60, int(a))) / 100
+        elif a not in ("все", "всё", "всех", "рынок"):
+            target = a
+    if target and not find_stock(target):
+        return await reply(update, f"Не нашёл акцию «{esc(target)}». Тикеры: «биржа»")
+    res = admin_move(target, pct, up)
+    lines = [("🚀 <b>Рынок взлетает!</b>" if up else "💥 <b>Обвал на бирже!</b>")]
+    for s, old, new in res:
+        lines.append(f"{'📈' if up else '📉'} <b>{s['sym']}</b> {old:.2f} → {new:.2f} ({(new / old - 1) * 100:+.1f}%)")
+    await reply(update, "\n".join(lines))
+
+
 async def handle_adminfun_text(update, context, low, text):
     me = update.effective_user
     chat = update.effective_chat.id
@@ -213,6 +232,8 @@ async def handle_adminfun_text(update, context, low, text):
         await _event(update, context, args)
     elif low in ("случайный подарок", "рандом подарок"):
         await _gift(update, context)
+    elif w[0] in ("обвал", "крах") or (w[0] in ("поднять", "взлёт", "взлет", "памп") and len(w) <= 3):
+        await _market(update, args, w[0] in ("поднять", "взлёт", "взлет", "памп"))
     elif w[0] == "титул":
         await _title(update, context, text.split()[1:])
     elif low in ("тревога", "фейк тревога", "мафия тревога"):
