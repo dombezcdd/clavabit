@@ -92,7 +92,7 @@ async def cmd_quests(update, context):
     done = {r["qid"] for r in db.execute(
         "SELECT qid FROM quest_done WHERE day=? AND user_id=?", (d, uid))}
     lines = ["📜 <b>Квесты на сегодня</b>"]
-    for qid, target in quests_for(d):
+    for qid, target in quests_for(d, uid):
         mark = "✅" if qid in done else "▫️"
         lines.append(f"{mark} {QUEST_TITLES[qid].format(n=target)} "
                      f"({min(prog[qid], target)}/{target})")
@@ -101,7 +101,7 @@ async def cmd_quests(update, context):
     if is_vip(uid):
         from services.xp import vip_quests_for
         lines.append("\n👑 <b>VIP-квесты</b>")
-        for qid, target in vip_quests_for(d):
+        for qid, target in vip_quests_for(d, uid):
             mark = "✅" if ("V" + qid) in done else "▫️"
             lines.append(f"{mark} {QUEST_TITLES[qid].format(n=target)} ({min(prog[qid], target)}/{target}) · +{VIP_QUEST_XP} опыта")
     else:

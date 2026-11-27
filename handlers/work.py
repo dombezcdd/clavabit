@@ -62,7 +62,7 @@ def _work_gate(uid):
     if prog["shifts"] >= MAX_SHIFTS_DAY:
         return f"😴 На сегодня хватит: максимум {MAX_SHIFTS_DAY} смены в день. Выходи завтра!"
     done = {r["qid"] for r in db.execute("SELECT qid FROM quest_done WHERE day=? AND user_id=?", (d, uid))}
-    need = [(q, n) for q, n in quests_for(d) if q != "shifts" and q not in done]
+    need = [(q, n) for q, n in quests_for(d, uid) if q != "shifts" and q not in done]
     if need:
         lines = [f"• {QUEST_TITLES[q].format(n=n)}: {min(prog.get(q, 0), n)}/{n}" for q, n in need]
         return ("🔒 Сначала выполни задания дня, потом на смену пустят:\n" + "\n".join(lines) +

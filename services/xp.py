@@ -97,21 +97,46 @@ QUEST_POOL = {
 QUEST_TITLES = {k: v[0] for grp in QUEST_POOL.values() for k, v in grp.items()}
 
 
-def quests_for(d):
-    """Три квеста дня: по одному из разговорных, игровых и бытовых, чтобы дни не повторялись."""
+def can_do(uid, qid):
+    """Можно ли игроку выполнить квест: нужен бизнес, питомец или работа."""
+    if uid is None:
+        return True
+    try:
+        if qid == "biz":
+            from services.finance import biz_of
+            return biz_of(uid) is not None
+        if qid == "feed":
+            from services.jobs import my_pets
+            return bool(my_pets(uid))
+        if qid == "shifts":
+            r = urow(uid)
+            return bool(r and r["job"])
+    except Exception:
+        log.exception("can_do")
+    return True
+
+
+def quests_for(d, uid=None):
+    """Три квеста дня: по одному из разговорных, игровых и бытовых. Если игрок не может выполнить выпавший
+    (нет бизнеса, питомца или работы), берём другой из того же раздела."""
     rng = random.Random(d)
     out = []
     for grp in ("talk", "game", "life"):
         k = rng.choice(list(QUEST_POOL[grp]))
-        out.append((k, rng.choice(QUEST_POOL[grp][k][1])))
+        t = rng.choice(QUEST_POOL[grp][k][1])
+        if not can_do(uid, k):
+            alt = [x for x in QUEST_POOL[grp] if can_do(uid, x)]
+            k = alt[random.Random(d + grp).randrange(len(alt))]
+            t = random.Random(d + grp + k).choice(QUEST_POOL[grp][k][1])
+        out.append((k, t))
     return out
 
 
-def vip_quests_for(d):
+def vip_quests_for(d, uid=None):
     """Два особых квеста для VIP: другие показатели, цель из самых высоких."""
     rng = random.Random(d + "vip")
-    reg = {k for k, _ in quests_for(d)}
-    pool = [(k, max(v[1])) for grp in QUEST_POOL.values() for k, v in grp.items() if k not in reg]
+    reg = {k for k, _ in quests_for(d, uid)}
+    pool = [(k, max(v[1])) for grp in QUEST_POOL.values() for k, v in grp.items() if k not in reg and can_do(uid, k)]
     return rng.sample(pool, 2)
 
 
@@ -131,7 +156,7 @@ async def check_quests(bot, uid, chat_id=None):
     prog = progress(uid, d)
     done = {r["qid"] for r in db.execute(
         "SELECT qid FROM quest_done WHERE day=? AND user_id=?", (d, uid))}
-    qs = quests_for(d)
+    qs = quests_for(d, uid)
     out = []
     for qid, target in qs:
         if qid not in done and prog[qid] >= target:
@@ -146,7 +171,7 @@ async def check_quests(bot, uid, chat_id=None):
     try:
         from services.vip import VIP_QUEST_XP, is_vip
         if is_vip(uid):
-            for qid, target in vip_quests_for(d):
+            for qid, target in vip_quests_for(d, uid):
                 key = "V" + qid
                 if key not in done and prog[qid] >= target:
                     db.execute("INSERT OR IGNORE INTO quest_done VALUES(?,?,?)", (d, uid, key))
