@@ -23,7 +23,7 @@ async def cmd_coin(update, context):
     uid = update.effective_user.id
     if not cooldown(("coin", uid), 5):
         return
-    await reply(update, "🪙 Выпал: <b>" + random.choice(["Орёл", "Решка"]) + "</b>")
+    await reply(update, "💵 Выпал: <b>" + random.choice(["Орёл", "Решка"]) + "</b>")
     await played(context.bot, uid)
 
 

@@ -57,7 +57,7 @@ def lobby_card(name, chips, best):
     d.rounded_rectangle((8, 8, W - 9, H - 9), 22, outline=GOLD, width=4)
     _lights(d, W, H, 24)
     d.text((W // 2, 74), "КАЗИНО", font=_font(74, True), fill=GOLD, anchor="mm", stroke_width=4, stroke_fill=(90, 40, 0))
-    d.text((W // 2, 130), "ФИШКИ · СЛОТЫ · РУЛЕТКА · БЛЭКДЖЕК · КРЭШ", font=_font(17, True), fill=(235, 220, 255), anchor="mm")
+    d.text((W // 2, 130), "СлавБакс · СЛОТЫ · РУЛЕТКА · БЛЭКДЖЕК · КРЭШ", font=_font(17, True), fill=(235, 220, 255), anchor="mm")
     # фишки
     for i, c in enumerate(((RED), (40, 40, 48), (60, 120, 230), GREEN)):
         x = 90 + i * 40
@@ -65,7 +65,7 @@ def lobby_card(name, chips, best):
         d.ellipse((x - 16, 215, x + 16, 247), outline=WHITE, width=2)
     d.rounded_rectangle((300, 170, W - 40, 320), 18, fill=(22, 14, 38), outline=(120, 90, 180), width=2)
     d.text((324, 184), _clean(name), font=_font(28, True), fill=WHITE)
-    d.text((324, 226), f"{chips} фишек", font=_font(40, True), fill=GOLD)
+    d.text((324, 226), f"{chips} славБакс", font=_font(40, True), fill=GOLD)
     d.text((324, 282), f"Статус: {casino_title(best)}", font=_font(20, True), fill=(190, 170, 235))
     d.text((90, 300), "ставка 10–1000", font=_font(16), fill=(180, 160, 220), anchor="lm")
     return _png(im)

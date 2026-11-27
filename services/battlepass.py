@@ -33,11 +33,11 @@ def reward(lvl):
     if lvl == 30:
         return ("vip", 3, "👑 VIP на 3 дня")
     if lvl % 10 == 0:
-        return ("chips", 1000, "🪙 1000 фишек")
+        return ("chips", 1000, "💵 1000 славБакс")
     if lvl % 5 == 0:
         return ("coins", 3, "💰 3 славКоин")
     if lvl % 3 == 0:
-        return ("chips", 250, "🪙 250 фишек")
+        return ("chips", 250, "💵 250 славБакс")
     if lvl % 2 == 0:
         return ("xp", 40, "✨ 40 опыта")
     return ("coins", 1, "💰 1 славКоин")

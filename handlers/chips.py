@@ -29,16 +29,16 @@ async def handle_chips_text(update, context, low, text):
     foe = target_user(update)
     amt = int(m.group(1))
     if not foe or foe.is_bot or foe.id == me.id:
-        await reply(update, "Ответь на сообщение того, кому передаёшь: «передать фишки 100»")
+        await reply(update, "Ответь на сообщение того, кому передаёшь: «передать славБакс 100»")
         return True
     if amt < MIN_SEND:
-        await reply(update, f"Минимум для передачи: {MIN_SEND} 🪙")
+        await reply(update, f"Минимум для передачи: {MIN_SEND} 💵")
         return True
     if chips_of(me.id) < amt:
-        await reply(update, f"Не хватает фишек: у тебя {chips_of(me.id)} 🪙")
+        await reply(update, f"Не хватает славБакс: у тебя {chips_of(me.id)} 💵")
         return True
     if _sent_today(me.id) + amt > DAY_LIMIT:
-        await reply(update, f"Лимит передач в сутки: {DAY_LIMIT} 🪙 (сегодня отправлено {_sent_today(me.id)})")
+        await reply(update, f"Лимит передач в сутки: {DAY_LIMIT} 💵 (сегодня отправлено {_sent_today(me.id)})")
         return True
     if not cooldown(("chipsend", me.id), 20):
         await reply(update, "Не так быстро, подожди пару секунд")
@@ -50,6 +50,6 @@ async def handle_chips_text(update, context, low, text):
     db.execute("INSERT INTO chip_send(user_id,day,sent) VALUES(?,?,?) ON CONFLICT(user_id,day) DO UPDATE SET sent=sent+?",
                (me.id, today(), amt, amt))
     db.commit()
-    await reply(update, f"🪙 {link(me.id, disp(me))} передал(а) {link(foe.id, disp(foe))} <b>{got}</b> фишек "
-                        f"(комиссия {FEE_PCT}%: {amt - got})\nУ тебя осталось: {chips_of(me.id)} 🪙")
+    await reply(update, f"💵 {link(me.id, disp(me))} передал(а) {link(foe.id, disp(foe))} <b>{got}</b> славБакс "
+                        f"(комиссия {FEE_PCT}%: {amt - got})\nУ тебя осталось: {chips_of(me.id)} 💵")
     return True

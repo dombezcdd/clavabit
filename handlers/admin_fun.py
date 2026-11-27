@@ -66,7 +66,7 @@ async def _gift(update, context):
         what = f"{n} {COIN}"
     elif kind == "chips":
         chips_add(uid, 300)
-        what = "300 🪙 фишек"
+        what = "300 💵 славБакс"
     elif kind == "star":
         stars_add(uid, 1)
         what = f"1 {STAR} звёздик"
@@ -155,7 +155,7 @@ async def _lot_start(update, context, args):
     price = max(10, min(price, 1000))
     mins = max(1, min(mins, 120))
     LOT[chat] = dict(price=price, tickets={}, bonus=bonus, ends=time.time() + mins * 60)
-    await context.bot.send_message(chat, f"🎟 <b>ЛОТЕРЕЯ!</b> Билет {price} 🪙 фишек. Купить: «билет» (до 10 штук на человека).\n"
+    await context.bot.send_message(chat, f"🎟 <b>ЛОТЕРЕЯ!</b> Билет {price} 💵 славБакс. Купить: «билет» (до 10 штук на человека).\n"
                                          f"Приз: все деньги с билетов{f' + бонус {bonus}' if bonus else ''}. Итоги через {mins} мин.",
                                    parse_mode=HTML)
 
@@ -178,7 +178,7 @@ async def _lot_end(bot, chat):
     chips_add(win, prize)
     r = urow(win)
     await bot.send_message(chat, f"🎉 <b>Лотерея окончена!</b> Билетов продано: {len(pool)}\nПобедитель: {link(win, r['name'])}\n"
-                                 f"Приз: <b>{prize}</b> 🪙 фишек", parse_mode=HTML)
+                                 f"Приз: <b>{prize}</b> 💵 славБакс", parse_mode=HTML)
 
 
 async def _market(update, args, up):
@@ -299,12 +299,12 @@ async def handle_adminfun_text(update, context, low, text):
             return await reply(update, "У тебя уже 10 билетов, это максимум") or True
         cost = n * lot["price"]
         if chips_of(me.id) < cost:
-            return await reply(update, f"Не хватает фишек: нужно {cost}, у тебя {chips_of(me.id)}") or True
+            return await reply(update, f"Не хватает славБакс: нужно {cost}, у тебя {chips_of(me.id)}") or True
         chips_add(me.id, -cost, disp(me))
         lot["tickets"][me.id] = have + n
         total = sum(lot["tickets"].values())
         await reply(update, f"🎟 {link(me.id, disp(me))} купил(а) билетов: {n} (у тебя {have + n}). Всего в игре: {total}, "
-                            f"банк {total * lot['price'] + lot['bonus']} 🪙")
+                            f"банк {total * lot['price'] + lot['bonus']} 💵")
         return True
     if not is_owner(me):
         return False

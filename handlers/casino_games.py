@@ -19,7 +19,7 @@ from services.casino_ui import bj_card, casino_title, crash_gif, hand_value, lob
 GOLD_OK, BAD = (150, 255, 180), (255, 150, 150)
 CROUPIER = {
     "win": ("Фортуна сегодня на твоей стороне.", "Крупье скрипит зубами.", "Так держать, везунчик!", "Казино в шоке."),
-    "lose": ("Дом всегда выигрывает.", "Не повезло. Бывает.", "Фишки любят возвращаться… не всегда.", "Крупье довольно улыбается."),
+    "lose": ("Дом всегда выигрывает.", "Не повезло. Бывает.", "СлавБакс любят возвращаться… не всегда.", "Крупье довольно улыбается."),
     "push": ("Ничья: ставка при тебе.", "Тут без победителей."),
 }
 
@@ -38,9 +38,9 @@ async def _quest(bot, uid, chat):
 
 def _check_bet(uid, bet):
     if bet < MIN_BET or bet > MAX_BET:
-        return f"Ставка от {MIN_BET} до {MAX_BET} фишек"
+        return f"Ставка от {MIN_BET} до {MAX_BET} славБакс"
     if chips_of(uid) < bet:
-        return f"Не хватает фишек: у тебя {chips_of(uid)}. Бонус раз в сутки: «бонус фишки»"
+        return f"Не хватает славБакс: у тебя {chips_of(uid)}. Бонус раз в сутки: «бонус славБакс»"
     return None
 
 
@@ -147,7 +147,7 @@ async def _bj_finish(bot, chat, uid, forced=False, reply_to=None):
         chips_add(uid, pay)
     buf = await asyncio.to_thread(bj_card, p, dl, False, bet, status, col, g["name"])
     cap = (f"🃏 <b>Блэкджек</b> · {link(uid, g['name'])}\nУ тебя {pv}, у крупье {dv}\n<b>{status}</b>\n"
-           f"🪙 Фишек: {chips_of(uid)}\n<i>{phrase(res)}</i>")
+           f"💵 СлавБакс: {chips_of(uid)}\n<i>{phrase(res)}</i>")
     kb = _bj_end_kb(uid, g["bet"])
     try:
         if g["msg"]:
@@ -220,7 +220,7 @@ def _crash_text(rd, cur=None, crashed=False):
         elif crashed:
             lines.append(f"💥 {esc(p['name'])}: −{p['bet']}")
         else:
-            lines.append(f"🎯 {esc(p['name'])}: {p['bet']} 🪙")
+            lines.append(f"🎯 {esc(p['name'])}: {p['bet']} 💵")
     head = "🚀 <b>КРЭШ</b>"
     if rd["state"] == "lobby":
         head += f" · старт через {max(0, int(rd['t0'] - time.time()))} сек.\nСтавь: «краш 50»"
@@ -331,7 +331,7 @@ async def crash_cash(chat, uid, q):
     m = max(1.0, math.floor(m * 100) / 100)
     p["cash"] = m
     chips_add(uid, int(p["bet"] * m))
-    await q.answer(f"Забрал x{m:.2f}: +{int(p['bet'] * m) - p['bet']} 🪙")
+    await q.answer(f"Забрал x{m:.2f}: +{int(p['bet'] * m) - p['bet']} 💵")
 
 
 # ============================== ОБЩИЙ СТОЛ РУЛЕТКИ ==============================
@@ -379,7 +379,7 @@ async def table_bet(bot, chat, me, bet, kind, num=None):
         return err
     mine = sum(b["bet"] for b in t["bets"] if b["uid"] == me.id)
     if mine + bet > 3000:
-        return "На одном столе максимум 3000 фишек от человека"
+        return "На одном столе максимум 3000 славБакс от человека"
     chips_add(me.id, -bet, disp(me))
     t["bets"].append(dict(uid=me.id, name=disp(me), bet=bet, kind=kind, num=num, label=_label(kind, num)))
     await _quest(bot, me.id, chat)
@@ -450,7 +450,7 @@ async def _table_run(bot, chat):
 def menu_kb(uid):
     return InlineKeyboardMarkup([
         [B(f"🎰 Слоты {b}", callback_data=f"cas:{uid}:slots:{b}") for b in (10, 25, 50)],
-        [B("🪙 Орёл 20", callback_data=f"cas:{uid}:coin:20:орёл"), B("🪙 Решка 20", callback_data=f"cas:{uid}:coin:20:решка")],
+        [B("💵 Орёл 20", callback_data=f"cas:{uid}:coin:20:орёл"), B("💵 Решка 20", callback_data=f"cas:{uid}:coin:20:решка")],
         [B("🔴 Красное 20", callback_data=f"cas:{uid}:rul:20:красное"), B("⚫ Чёрное 20", callback_data=f"cas:{uid}:rul:20:чёрное")],
         [B("🃏 Блэкджек 50", callback_data=f"cg:{uid}:bj:new:50"), B("🚀 Краш 50", callback_data="cg:0:crash:join:50")],
         [B("🎡 Общий стол", callback_data=f"cg:{uid}:tbl:open")],

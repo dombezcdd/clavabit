@@ -204,6 +204,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await cmd_report(update, context)
 
     cmd_low = re.sub(r"\s+@\w{4,32}\s*$", "", low).strip()
+    # славБакс = прежние «фишки»: старые команды работают, новые тоже
+    cmd_low = re.sub(r"(топ\s+)слав\s?бакс\w*", r"\1фишек", cmd_low)
+    cmd_low = re.sub(r"слав\s?бакс\w*", "фишки", cmd_low)
     if cmd_low.startswith(".") and cmd_low[1:].strip() in RP:
         return await handle_rp(update, context, cmd_low[1:].strip(), dot=True)
     if cmd_low in RP:

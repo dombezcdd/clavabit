@@ -18,7 +18,7 @@ from services.xp import give_xp
 SECTIONS = {
     "money": ("💰 Деньги и очки",
               "• <code>выдать монеты @юз 500</code> (минус — забрать)\n"
-              "• <code>выдать фишки @юз 1000</code>\n"
+              "• <code>выдать славБакс @юз 1000</code>\n"
               "• <code>выдать звёздики @юз 25</code>\n"
               "• <code>выдать вип @юз 30</code> (дней; -1 снять)\n"
               "• <code>выдать опыт @юз 300</code>\n"
@@ -36,7 +36,7 @@ SECTIONS = {
             "• <code>вернуть</code> [тикер или «все»] — вернуть цены акций к исходным\n"
             "• <code>золотой дождь 5</code> — монеты (1–5) всем, кто писал за час\n"
             "• <code>событие опыт|зарплата|скидка 60</code> — на N минут: ×2 опыт, +50% зарплаты, −20% в магазине\n"
-            "• <code>случайный подарок</code> — бот дарит случайному активному (монеты, фишки, звёздик, VIP на сутки)\n"
+            "• <code>случайный подарок</code> — бот дарит случайному активному (монеты, славБакс, звёздик, VIP на сутки)\n"
             "• <code>титул @юз Король чата</code> — титул в профиле (без текста: убрать)\n"
             "• <code>тревога</code> — шуточная «тревога» (налёт полиции, вирус…), через 45 с «отбой»\n"
             "• <code>мут рулетка</code> — случайный активный молчит 1 минуту (боту нужны права)\n"
@@ -166,7 +166,7 @@ async def _give(update, verb, uid, name, what, rest, err):
         if num is None:
             return await _need(update, "число")
         chips_add(uid, num, name)
-        msg = f"🪙 {who}: {num:+d} фишек. Баланс {chips_of(uid)}"
+        msg = f"💵 {who}: {num:+d} славБакс. Баланс {chips_of(uid)}"
     elif what in ("звёздики", "звездики", "звёзд", "звезд", "звёздиков", "звездиков"):
         if num is None:
             return await _need(update, "число")
@@ -250,7 +250,7 @@ def _info(uid):
     if (r["jail_until"] or 0) > now:
         st.append("🔒 в тюрьме")
     return (f"🔎 <b>{link(uid, r['name'])}</b> · id <code>{uid}</code>\n"
-            f"💰 {coins_of(uid)} {COIN} · 🪙 {chips_of(uid)} фишек · ⭐ {r['xp']} опыта · ✨ реп. {r['rep']}\n"
+            f"💰 {coins_of(uid)} {COIN} · 💵 {chips_of(uid)} славБакс · ⭐ {r['xp']} опыта · ✨ реп. {r['rep']}\n"
             f"💼 {JOBS[r['job']][0] if r['job'] in JOBS else 'без работы'} (смен {r['job_shifts'] or 0})\n"
             f"🏠 {HOUSES[r['house']][0] if r['house'] in HOUSES else 'нет'} · 🐾 {pets}\n"
             f"Состояние: {', '.join(st) or 'всё в порядке'}")

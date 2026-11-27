@@ -39,7 +39,7 @@ def claim_bonus(uid, day):
 def top_chips(n=10):
     return db.execute("SELECT user_id,name,chips FROM casino ORDER BY chips DESC LIMIT ?", (n,)).fetchall()
 
-CHIP = "🪙 фишек"
+CHIP = "💵 славБакс"
 MIN_BET, MAX_BET = 10, 1000
 START_CHIPS = 1000           # стартовый баланс
 DAILY_BONUS = 500            # бонус раз в сутки

@@ -25,29 +25,29 @@ CMD_RE = re.compile(r"^(слоты|слот|монетка|монета|руле
 
 def _menu(uid):
     rows = [[B(f"🎰 Слоты {b}", callback_data=f"cas:{uid}:slots:{b}") for b in (10, 25, 50)],
-            [B("🪙 Орёл 20", callback_data=f"cas:{uid}:coin:20:орёл"), B("🪙 Решка 20", callback_data=f"cas:{uid}:coin:20:решка")],
+            [B("💵 Орёл 20", callback_data=f"cas:{uid}:coin:20:орёл"), B("💵 Решка 20", callback_data=f"cas:{uid}:coin:20:решка")],
             [B("🔴 Красное 20", callback_data=f"cas:{uid}:rul:20:красное"), B("⚫ Чёрное 20", callback_data=f"cas:{uid}:rul:20:чёрное")]]
     return InlineKeyboardMarkup(rows)
 
 
 def _help(uid):
     pay = " · ".join(f"{s}×{m}" for s, m in SLOT_PAY.items()).replace("7️⃣", "7")
-    return (f"🎰 <b>КАЗИНО</b> · у тебя {chips_of(uid)} 🪙\n"
-            f"Играем на фишки, ставка {MIN_BET}–{MAX_BET}. На славКоины не влияют.\n\n"
+    return (f"🎰 <b>КАЗИНО</b> · у тебя {chips_of(uid)} 💵\n"
+            f"Играем на славБакс, ставка {MIN_BET}–{MAX_BET}. На славКоины не влияют.\n\n"
             "🎰 <code>слоты 50</code>\n"
-            "🪙 <code>монетка 20 орёл</code> (или решка)\n"
+            "💵 <code>монетка 20 орёл</code> (или решка)\n"
             "🎡 <code>рулетка 30 красное</code> (чёрное, чётное, нечётное, <code>число 17</code>)\n"
             "🃏 <code>блэкджек 50</code> · 🚀 <code>краш 50</code> · 🎡 <code>рулетка стол</code> (общий стол)\n\n"
             f"Слоты: {pay}\n"
-            f"«бонус фишки» +{DAILY_BONUS} раз в сутки · «топ фишек»")
+            f"«бонус славБакс» +{DAILY_BONUS} раз в сутки · «топ славБакс»")
 
 
 async def _play(bot, chat, uid, name, game, bet, arg):
     """-> (текст, клавиатура) или, при отказе, (текст, None, True)"""
     if bet < MIN_BET or bet > MAX_BET:
-        return f"Ставка от {MIN_BET} до {MAX_BET} фишек", None, True
+        return f"Ставка от {MIN_BET} до {MAX_BET} славБакс", None, True
     if chips_of(uid) < bet:
-        return f"Не хватает фишек: у тебя {chips_of(uid)}. Бонус раз в сутки: «бонус фишки»", None, True
+        return f"Не хватает славБакс: у тебя {chips_of(uid)}. Бонус раз в сутки: «бонус славБакс»", None, True
     left = COOLDOWN - (time.time() - _last.get(uid, 0))
     if left > 0:
         return f"Крупье перемешивает колоду 🃏 Подожди ещё {int(left) + 1} сек.", None, True
@@ -59,7 +59,7 @@ async def _play(bot, chat, uid, name, game, bet, arg):
         res = " ".join(reels)
     elif game == "coin":
         side, mult = flip(arg)
-        title = f"🪙 Монетка ({arg})"
+        title = f"💵 Монетка ({arg})"
         res = f"выпало: {side}"
     else:
         kind, num = (arg.split(":") + [None])[:2]
@@ -78,7 +78,7 @@ async def _play(bot, chat, uid, name, game, bet, arg):
     else:
         out = f"🎉 Выигрыш +{win - bet} (×{mult})" + (" ДЖЕКПОТ!" if mult >= 50 else "")
     txt = (f"{title} · {link(uid, name)}\n<b>{res}</b>\n{out} · ставка {bet}\n"
-           f"🪙 Фишек: {chips_of(uid)}")
+           f"💵 СлавБакс: {chips_of(uid)}")
     info = dict(game=game, bet=bet, mult=mult, arg=arg)
     if game == "slots":
         info["reels"] = reels
@@ -168,11 +168,11 @@ async def handle_casino_text(update, context, low, text):
     touch(me)
     cmd, rest = m.group(1), (m.group(2) or "").split()
     if cmd == "фишки":
-        await reply(update, f"🪙 У тебя {chips_of(me.id)} фишек. Играть: «казино»")
+        await reply(update, f"💵 У тебя {chips_of(me.id)} славБакс. Играть: «казино»")
         return True
     if cmd == "бонус фишки":
         got = claim_bonus(me.id, today())
-        await reply(update, f"🎁 Бонус +{got} фишек! Теперь у тебя {chips_of(me.id)}" if got
+        await reply(update, f"🎁 Бонус +{got} славБакс! Теперь у тебя {chips_of(me.id)}" if got
                     else "Сегодня бонус уже получен, приходи завтра 🙂")
         return True
     if cmd == "топ фишек":
