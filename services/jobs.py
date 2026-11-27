@@ -100,6 +100,18 @@ def shown_cd(cd):
     return cd * SHIFT_SCALE
 
 
+BIZ_JOB_PAY_DIV = 1.5     # у владельца бизнеса зарплата на работе меньше в столько раз
+BIZ_JOB_CD_H = 2          # и пауза между сменами больше на столько часов
+
+
+def has_business(uid):
+    try:
+        from services.finance import biz_of
+        return biz_of(uid) is not None
+    except Exception:
+        return False
+
+
 def job_pay(row, shift_started=None):
     name, base, cd, req = JOBS[row["job"]]
     mult = 1 + min(row["job_shifts"] or 0, PAY_GROW_CAP) / PAY_GROW_CAP * PAY_GROW_MAX + house_bonus_pct(row["user_id"]) / 100 \
@@ -121,6 +133,8 @@ def job_pay(row, shift_started=None):
             pay_mult *= 1.5
     except Exception:
         pass
+    if has_business(row["user_id"]):
+        pay_mult /= BIZ_JOB_PAY_DIV
     return max(1, int(base * mult * JOB_PAY_MULT * SHIFT_SCALE * pay_mult))
 
 
@@ -142,6 +156,8 @@ def job_cd_hours(row):
             hours *= VIP_CD_MULT
     except Exception:
         pass
+    if has_business(row["user_id"]):
+        hours += BIZ_JOB_CD_H
     return hours
 
 

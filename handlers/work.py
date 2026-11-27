@@ -17,7 +17,7 @@ from services.finance import SALARY_TAX, tax_rate
 from services.economy import coins_of, give_coins
 from services.virus import is_sick, sick_for_shift
 from services.xp import give_xp
-from services.jobs import CAREER, CAREER_BONUS, MAX_SHIFTS_DAY, shown_cd, PAY_GROW_CAP, PAY_GROW_MAX, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
+from services.jobs import CAREER, has_business, CAREER_BONUS, MAX_SHIFTS_DAY, shown_cd, PAY_GROW_CAP, PAY_GROW_MAX, job_cd_hours, shift_xp, DELIVER, JOBS, JOB_GIF, MATH_FLAVOR, FISH, PLACES_DOC, PLACES_SERVICE, PLACES_STATION, PLACES_TAXI, TASK_MIN, WORDS, _math_task, career_next, career_title, house_bonus_pct, job_missing, job_pay, open_task, shown_pay, tag_user
 from services.media import send_with_pic
 from services.miniapp import mini_enabled, mini_link, mini_open
 from services.relations import pair_of, spark_add
@@ -253,6 +253,8 @@ async def life_job_my(update, context):
     extra = [f"стаж +{int(min(sh, PAY_GROW_CAP) / PAY_GROW_CAP * PAY_GROW_MAX * 100)}%"]
     if bonus:
         extra.append(f"дом +{bonus}%")
+    if has_business(me.id):
+        extra.append("есть бизнес: зарплата ÷1,5")
     text = (f"💼 <b>{esc(name)}</b> · {career_title(sh)}\n\n"
             f"💰 <b>Зарплата за смену</b>\n{job_pay(row)} славКоин\n"
             f"<i>база {shown_pay(base)} · {' · '.join(extra)}</i>\n\n"
