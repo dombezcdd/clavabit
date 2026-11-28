@@ -12,12 +12,14 @@ log = logging.getLogger("premoji")
 SETS = ["CuteBigPack", "whiteblackcore", "gay_nastyaa_emoji_4"]
 MAP = {}                       # эмодзи -> custom_emoji_id
 MAX_REPL = 80
+# игровые поля, где значки несут смысл (жизни, патроны): там оставляем обычные эмодзи
+SKIP = ("Дуэль на выстрелах", "Камень-ножницы-бумага", "Дуэль ·")
 _TAG = re.compile(r"(<[^>]*>)")
 _orig = {}
 
 
 def _wrap(text):
-    if not MAP or not text or "<tg-emoji" in text:
+    if not MAP or not text or "<tg-emoji" in text or any(m in text for m in SKIP):
         return text
     n = [0]
 
