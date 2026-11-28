@@ -53,8 +53,8 @@ async def life_jobs_find(update, context):
     try:
         from handlers.finance import _send_photo
         from services.life_cards import jobs_card
-        items = [(k, name, shown_pay(pay), shown_cd(cd), False) for k, name, pay, cd, _ in avail] + \
-                [(k, name, shown_pay(pay), shown_cd(cd), True) for k, name, pay, cd, _ in locked]
+        items = [(k, name, shown_pay(pay), shown_cd(cd, pay), False) for k, name, pay, cd, _ in avail] + \
+                [(k, name, shown_pay(pay), shown_cd(cd, pay), True) for k, name, pay, cd, _ in locked]
         cap = "\n".join(lines[:-2] if len(lines) > 2 else lines)[:1000]
         return await _send_photo(update.effective_message, lambda: jobs_card(items, row["job"]), cap, reply_markup=kb)
     except Exception:

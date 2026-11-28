@@ -100,7 +100,9 @@ def shown_pay(base):
     return max(1, int(base * JOB_PAY_MULT * SHIFT_SCALE * _top(base)))
 
 
-def shown_cd(cd):
+def shown_cd(cd, base=0):
+    if base >= TOP_BASE:        # у крутых профессий пауза минимальная
+        return MIN_CD_H
     return max(MIN_CD_H, cd * SHIFT_SCALE)
 
 
@@ -159,6 +161,8 @@ def job_cd_hours(row):
     base = JOBS[row["job"]][2]
     sh = min(row["job_shifts"] or 0, CD_GROW_CAP)
     hours = (base + CD_GROW_HOURS * sh / CD_GROW_CAP) * SHIFT_SCALE
+    if JOBS[row["job"]][1] >= TOP_BASE:
+        hours = MIN_CD_H
     try:
         from services.vip import VIP_CD_MULT, is_vip
         if is_vip(row["user_id"]):
