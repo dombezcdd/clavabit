@@ -89,8 +89,8 @@ def profile_card(info, avatar=None):
     for i, (lab, val) in enumerate(tiles):
         x = 44 + i * (tw + gap)
         d.rounded_rectangle((x, ty, x + tw, ty + 96), 16, fill=(44, 48, 64))
-        d.text((x + 16, ty + 12), lab, font=_font(19), fill=SUB)
-        d.text((x + 16, ty + 42), str(val), font=_fit(d, str(val), _font, 34, tw - 28), fill=TXT)
+        d.text((x + 12, ty + 12), lab, font=_font(17 if len(tiles) > 4 else 19), fill=SUB)
+        d.text((x + 12, ty + 42), str(val), font=_fit(d, str(val), _font, 34, tw - 28), fill=TXT)
     # нижняя строка
     fy = 432
     parts = [p for p in info["foot"] if p]

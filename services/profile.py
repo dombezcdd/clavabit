@@ -114,6 +114,21 @@ def _col(row, name):
         return ""
 
 
+def _chips(uid):
+    try:
+        from services.casino import chips_of
+        return chips_of(uid)
+    except Exception:
+        return 0
+
+
+def _cats(uid):
+    try:
+        return db.execute("SELECT COUNT(*) c FROM cat_cards WHERE user_id=?", (uid,)).fetchone()["c"]
+    except Exception:
+        return 0
+
+
 async def profile_view(bot, row):
     """-> (карточка BytesIO или None, подпись HTML)"""
     import asyncio
@@ -173,8 +188,8 @@ async def profile_view(bot, row):
             av = None
         from services.vip import is_vip
         card = profile_card(dict(vip=is_vip(uid), uid=uid, name=name, sub=sub or "участник", level=lvl, title=title_of(lvl), xp_pct=pct,
-                                 xp_left=left, tiles=[("славКоин", coins_of(uid)), ("Репутация", row["rep"]),
-                                                      ("Серия дней", st), ("В чате", f"{days} дн.")], foot=foot), av)
+                                 xp_left=left, tiles=[("славКоин", coins_of(uid)), ("славБакс", _chips(uid)), ("Репутация", row["rep"]),
+                                                      ("Серия дней", st), ("В чате", f"{days} дн."), ("Котят", _cats(uid))], foot=foot), av)
     except Exception:
         log.exception("profile_card")
     return card, await build_profile(bot, row)
