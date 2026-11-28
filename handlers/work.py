@@ -200,6 +200,13 @@ async def finish_task(bot, chat_id, uid, reply_to=None, mult=1.0, score=None):
         tr = urow(t["target_id"])
         if tr:
             extra = f"\n📬 {link(tr['user_id'], tr['name'])} обслужен(а)"
+    try:
+        from services.needs import heavy_mult, is_heavy
+        if is_heavy(uid):
+            extra += ("\n⚫ Тяжёлый день: зарплата вдвое меньше (не поел или не поспал: «поесть», «поспать»)"
+                      if heavy_mult(uid) < 1 else "\n⚫ Тяжёлый день, но ты поел и выспался: зарплата полная 💪")
+    except Exception:
+        pass
     await send_with_pic(bot, chat_id,
                         f"💼 {link(uid, row['name'])} · <b>{JOBS[row['job']][0]}</b>\n✅ Задание выполнено{extra}\n\n"
                         f"💰 <b>Заработано:</b> +{pay} славКоин\n"

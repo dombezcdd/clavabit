@@ -6,7 +6,7 @@ import zlib
 from core.utils import today
 from database.db import db
 
-HEAVY_PCT = 25          # шанс чёрного дня
+HEAVY_PCT = 12          # шанс чёрного дня (примерно раз в 8 дней)
 HEAVY_MULT = 0.5
 FOOD = {                # ключ: (название, цена, где)
     "бутерброд": ("🥪 Бутерброд", 3, "магазин"),
