@@ -4,7 +4,7 @@
 import io
 import math
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from services.monopoly_board import _font
 
@@ -12,46 +12,54 @@ W, H = 1280, 720
 
 
 def coop_card():
-    img = Image.new("RGB", (W, H))
-    d = ImageDraw.Draw(img)
-    for y in range(H):                      # диагональный градиент фиолетовый -> розовый
-        for x in range(0, W, 8):
-            t = (x / W * 0.6 + y / H * 0.4)
-            d.rectangle((x, y, x + 8, y), fill=(int(40 + 150 * t), int(20 + 30 * t), int(110 + 40 * (1 - t))))
+    import os
+    import random
+    rnd = random.Random(7)
+    img = Image.new("RGB", (W, H), (8, 6, 22))
+    # северное сияние: крупные размытые пятна
+    glow = Image.new("RGB", (W, H), (8, 6, 22))
+    gd = ImageDraw.Draw(glow)
+    for (x, y, rx, ry, col) in ((260, 120, 420, 200, (110, 60, 255)), (980, 160, 380, 190, (255, 60, 150)),
+                                (640, 640, 620, 170, (30, 170, 255)), (1180, 620, 300, 200, (160, 60, 255)),
+                                (80, 600, 300, 180, (255, 90, 120))):
+        gd.ellipse((x - rx, y - ry, x + rx, y + ry), fill=col)
+    glow = glow.filter(ImageFilter.GaussianBlur(120))
+    img = Image.blend(img, glow, 0.85)
     ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(ov)
-    # концентрические кольца по углам
-    for cx, cy in ((0, 0), (W, H)):
-        for r in range(60, 700, 52):
-            od.ellipse((cx - r, cy - r, cx + r, cy + r), outline=(255, 255, 255, 38), width=3)
-    # ромбовая сетка
-    for gx in range(-40, W + 80, 80):
-        for gy in range(-40, H + 80, 80):
-            if (gx // 80 + gy // 80) % 2 == 0:
-                od.polygon([(gx, gy - 14), (gx + 14, gy), (gx, gy + 14), (gx - 14, gy)], fill=(255, 255, 255, 26))
-    # волны снизу
-    for k, a in enumerate((60, 45, 30)):
-        pts = [(x, 600 + k * 34 + 22 * math.sin(x / 90 + k * 1.3)) for x in range(0, W + 10, 10)]
-        od.polygon(pts + [(W, H), (0, H)], fill=(255, 255, 255, a // 3))
-        od.line(pts, fill=(255, 255, 255, a + 40), width=3)
-    # звёзды-искры
-    for sx, sy, s in ((210, 150, 16), (1080, 130, 12), (980, 560, 18), (140, 520, 11), (640, 90, 9), (1170, 360, 10)):
+    for _ in range(170):                     # звёздная пыль
+        x, y, r = rnd.randrange(W), rnd.randrange(H), rnd.choice((1, 1, 2, 2, 3))
+        od.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, rnd.randrange(60, 220)))
+    for _ in range(14):                      # боке
+        x, y, r = rnd.randrange(W), rnd.randrange(H), rnd.randrange(18, 60)
+        od.ellipse((x - r, y - r, x + r, y + r), outline=(255, 255, 255, 60), width=2)
+    for k in range(7):                       # тонкие дуги-узоры
+        r = 300 + k * 46
+        od.arc((W // 2 - r, H // 2 - r * 0.62, W // 2 + r, H // 2 + r * 0.62), 200, 340, fill=(255, 255, 255, 40), width=2)
+        od.arc((W // 2 - r, H // 2 - r * 0.62, W // 2 + r, H // 2 + r * 0.62), 20, 160, fill=(255, 255, 255, 40), width=2)
+    for sx, sy, s in ((190, 140, 20), (1100, 120, 15), (1010, 580, 22), (130, 540, 13), (700, 70, 10)):
         od.polygon([(sx, sy - s), (sx + s // 3, sy - s // 3), (sx + s, sy), (sx + s // 3, sy + s // 3), (sx, sy + s),
-                    (sx - s // 3, sy + s // 3), (sx - s, sy), (sx - s // 3, sy - s // 3)], fill=(255, 235, 170, 230))
-    img.paste(ov, (0, 0), ov)
-    # рамка и надпись
+                    (sx - s // 3, sy + s // 3), (sx - s, sy), (sx - s // 3, sy - s // 3)], fill=(255, 240, 190, 235))
+    img = img.convert("RGBA")
+    img.alpha_composite(ov)
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle((60, 60, W - 60, H - 60), 40, outline=(255, 255, 255), width=4)
-    d.rounded_rectangle((76, 76, W - 76, H - 76), 30, outline=(255, 220, 140), width=2)
+    d.rounded_rectangle((56, 56, W - 56, H - 56), 44, outline=(255, 255, 255, 150), width=3)
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        title = ImageFont.truetype(os.path.join(here, "assets", "Loki.ttf"), 190)
+        small = ImageFont.truetype(os.path.join(here, "assets", "Loki.ttf"), 64)
+    except Exception:
+        title, small = _font(110, True), _font(48, True)
     sh = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    ImageDraw.Draw(sh).text((W // 2 + 4, H // 2 + 8), "СОТРУДНИЧЕСТВО", font=_font(90, True), fill=(20, 0, 50, 170), anchor="mm")
-    sh = sh.filter(ImageFilter.GaussianBlur(7))
-    img.paste(sh, (0, 0), sh)
+    ImageDraw.Draw(sh).text((W // 2, H // 2 - 20), "Cooperation", font=title, fill=(255, 80, 170, 200), anchor="mm")
+    sh = sh.filter(ImageFilter.GaussianBlur(18))
+    img.alpha_composite(sh)
     d = ImageDraw.Draw(img)
-    d.text((W // 2, H // 2), "СОТРУДНИЧЕСТВО", font=_font(90, True), fill=(255, 255, 255), anchor="mm")
-    d.line((W // 2 - 200, H // 2 + 70, W // 2 + 200, H // 2 + 70), fill=(255, 220, 140), width=4)
-    d.text((W // 2, H // 2 + 112), "@swagslave", font=_font(38, True), fill=(255, 235, 190), anchor="mm")
+    d.text((W // 2 + 5, H // 2 - 15), "Cooperation", font=title, fill=(60, 20, 120), anchor="mm")
+    d.text((W // 2, H // 2 - 20), "Cooperation", font=title, fill=(255, 255, 255), anchor="mm")
+    d.text((W // 2, H // 2 + 105), "СОТРУДНИЧЕСТВО", font=_font(38, True), fill=(255, 215, 150), anchor="mm")
+    d.text((W // 2, H // 2 + 175), "@swagslave", font=small, fill=(255, 255, 255), anchor="mm")
     bio = io.BytesIO()
-    img.save(bio, "JPEG", quality=92)
+    img.convert("RGB").save(bio, "JPEG", quality=92)
     bio.seek(0)
     return bio
