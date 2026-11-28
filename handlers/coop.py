@@ -57,6 +57,12 @@ def coop_kb():
 async def handle_coop_text(update, context, low, text):
     if update.effective_chat.id not in ALLOWED or low not in WORDS:
         return False
+    try:
+        from handlers.finance import _send_photo
+        from services.coop_card import coop_card
+        await _send_photo(update.effective_message, coop_card, "🤝 <b>Сотрудничество</b>", key="coop_cover")
+    except Exception:
+        log.exception("coop cover")
     await reply(update, coop_text(), reply_markup=coop_kb())
     return True
 
