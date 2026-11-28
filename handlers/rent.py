@@ -60,10 +60,11 @@ def card(items):
             d.ellipse((x + 63, y + 38, x + 80, y + 56), outline=(255, 255, 255), width=4)
         else:
             d.text((x + 63, y + 70), "@", font=_font(56, True), fill=(255, 255, 255), anchor="mm")
-        t = it["title"][:20]
-        d.text((x + 124, y + 42), t, font=_font(26 if len(t) < 14 else 21, True), fill=(255, 255, 255), anchor="lm")
+        t = it["title"][:20] if gift else "Случайный юзернейм"
+        d.text((x + 124, y + 42), t, font=_font(26 if len(t) < 14 else 23, True), fill=(255, 255, 255), anchor="lm")
         d.text((x + 124, y + 82), f"{it['price']} СК · {DAYS} дня", font=_font(24, True), fill=(130, 235, 170), anchor="lm")
-        d.text((x + 124, y + 118), f"№{it['id']} · " + ("подарок" if gift else "NFT-юзернейм"), font=_font(17), fill=(190, 195, 225), anchor="lm")
+        sub = "подарок" if gift else "напр. " + it["title"][:26]
+        d.text((x + 124, y + 118), sub, font=_font(17), fill=(190, 195, 225), anchor="lm")
     bio = io.BytesIO()
     img.save(bio, "JPEG", quality=88)
     bio.seek(0)
@@ -81,10 +82,10 @@ async def handle_rent_text(update, context, low, text):
         if not items:
             await reply(update, "🛍 Аренда пока пуста, скоро добавим лоты.")
             return True
-        kb = InlineKeyboardMarkup([[B(f"{'🎁' if i['kind'] == 'подарок' else '@'} {i['title'][:22]} · {i['price']} СК",
+        kb = InlineKeyboardMarkup([[B(f"{'🎁 ' + i['title'][:22] if i['kind'] == 'подарок' else '@ Случайный юзернейм'} · {i['price']} СК",
                                       callback_data=f"rn:buy:{me.id}:{i['id']}")] for i in items])
         cap = (f"🛍 <b>Аренда на {DAYS} дня</b>\nБаланс: {coins_of(me.id)} {COIN}. Оплатил, и владелец выдаст лот "
-               "тебе в личку. По окончании срока вернёшь.")
+               "тебе в личку.")
         from handlers.finance import _send_photo
         await _send_photo(update.effective_message, lambda: card(items), cap, reply_markup=kb)
         return True
@@ -136,7 +137,8 @@ async def on_rent_btn(update, context):
         it = db.execute("SELECT * FROM rent_items WHERE id=? AND active=1", (int(p[3]),)).fetchone()
         if not it or not urow(me.id):
             return await q.answer("Лот недоступен", show_alert=True)
-        busy = db.execute("SELECT 1 FROM rent_orders WHERE item_id=? AND status IN ('new','active')", (it["id"],)).fetchone()
+        busy = it["kind"] == "подарок" and db.execute(
+            "SELECT 1 FROM rent_orders WHERE item_id=? AND status IN ('new','active')", (it["id"],)).fetchone()
         if busy:
             return await q.answer("Этот лот уже арендован, загляни позже", show_alert=True)
         if coins_of(me.id) < it["price"]:
@@ -167,17 +169,8 @@ async def on_rent_btn(update, context):
         await q.answer("Отмечено")
         await q.edit_message_text(q.message.text + f"\n\n✅ Выдано, срок {DAYS} дня")
         try:
-            await context.bot.send_message(o["user_id"], f"✅ Лот выдан на {DAYS} дня. Приятного пользования! Не забудь вернуть в срок.")
+            await context.bot.send_message(o["user_id"], f"✅ Лот выдан на {DAYS} дня. Приятного пользования!")
         except Exception:
             pass
-        if context.job_queue:
-            async def end(ctx, oid=o["id"], uid=o["user_id"]):
-                db.execute("UPDATE rent_orders SET status='done' WHERE id=?", (oid,))
-                db.commit()
-                try:
-                    await ctx.bot.send_message(uid, "⌛ Срок аренды закончился. Верни лот владельцу, спасибо!")
-                except Exception:
-                    pass
-            context.job_queue.run_once(end, DAYS * 86400)
     else:
         await q.answer()
