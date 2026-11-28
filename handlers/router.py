@@ -30,6 +30,7 @@ from handlers.chips import handle_chips_text
 from handlers.needs import handle_needs_text
 from handlers.venues import handle_venue_text
 from handlers.rent import handle_rent_text
+from handlers.catcards import handle_cat_text
 from handlers.petbattle import handle_petbattle_text
 from handlers.payments import handle_pay_text
 from handlers.admin import handle_admin_text
@@ -246,6 +247,8 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await handle_venue_text(update, context, cmd_low, text):
         return
     if await handle_rent_text(update, context, cmd_low, text):
+        return
+    if await handle_cat_text(update, context, cmd_low, text):
         return
     if await handle_farm_text(update, context, cmd_low, text):
         return
