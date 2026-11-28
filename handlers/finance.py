@@ -6,7 +6,7 @@ import re
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import BadRequest, NetworkError, TimedOut
+from telegram.error import BadRequest, NetworkError, RetryAfter, TimedOut
 
 from config import ALLOWED, CHAT_ID, HTML, QUIET_HOURS
 from core.durations import fmt_minutes
@@ -284,6 +284,8 @@ async def on_stock_btn(update, context):
                 await q.edit_message_text(text, parse_mode=HTML, reply_markup=kb)
         except BadRequest:
             pass            # «message is not modified»
+        except RetryAfter:
+            pass            # слишком частые нажатия: карточка обновится при следующем
 
     if act == "m":
         await q.answer()

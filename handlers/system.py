@@ -39,4 +39,15 @@ async def on_error(update, context):
         # временный обрыв связи хостинга с Telegram: не ошибка кода, трейсбек не нужен
         log.warning("Сеть: %s: %s", type(context.error).__name__, context.error)
         return
+    from telegram.error import RetryAfter
+    if isinstance(context.error, RetryAfter):
+        # лимит Telegram на частые правки: не ошибка кода
+        log.warning("Лимит Telegram: подождать %s с", context.error.retry_after)
+        q = getattr(update, "callback_query", None) if update else None
+        if q:
+            try:
+                await q.answer("Слишком часто, подожди пару секунд ⏳")
+            except Exception:
+                pass
+        return
     log.error("Ошибка: %s", context.error, exc_info=context.error)
