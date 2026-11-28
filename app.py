@@ -27,6 +27,7 @@ from handlers.coop import on_coop_btn
 from handlers.passcmd import on_pass_btn
 from handlers.farm import on_farm_btn
 from handlers.needs import on_needs_btn
+from handlers.rent import on_rent_btn
 from handlers.petbattle import on_pb_btn
 from handlers.casino_games import on_cg_btn
 from handlers.payments import cmd_stars, on_pay_btn, on_paid, on_precheckout
@@ -174,6 +175,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_cg_btn, pattern=r"^cg:"))
     app.add_handler(CallbackQueryHandler(on_farm_btn, pattern=r"^fm:"))
     app.add_handler(CallbackQueryHandler(on_needs_btn, pattern=r"^nd:"))
+    app.add_handler(CallbackQueryHandler(on_rent_btn, pattern=r"^rn:"))
     app.add_handler(CallbackQueryHandler(on_pb_btn, pattern=r"^pb:"))
     app.add_handler(CallbackQueryHandler(on_pay_btn, pattern=r"^pay:"))
     app.add_handler(PreCheckoutQueryHandler(on_precheckout))
