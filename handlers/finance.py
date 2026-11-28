@@ -215,6 +215,11 @@ def _caption():
     for s in db.execute("SELECT * FROM stocks ORDER BY rowid").fetchall():
         ch = (s["price"] - s["prev"]) / s["prev"] * 100 if s["prev"] else 0
         lines.append(f"{'🟢' if ch >= 0 else '🔴'} <b>{s['sym']}</b> {esc(s['name'])}: {s['price']:.2f} ({ch:+.1f}%)")
+    ch = [((x["price"] - x["prev"]) / x["prev"] * 100 if x["prev"] else 0, x["sym"])
+          for x in db.execute("SELECT * FROM stocks").fetchall()]
+    if ch:
+        up, dn = max(ch), min(ch)
+        lines.append(f"\n🚀 Рост: <b>{up[1]}</b> {up[0]:+.1f}% · 📉 Падение: <b>{dn[1]}</b> {dn[0]:+.1f}%")
     lines.append(f"\n«купить акции SVD 5» · «продать акции SVD все» · «портфель»\n"
                  f"Цены меняются раз в 45 мин (следующее обновление через ~{_next_update()} мин). Лимит вложений {STOCK_DAY_LIMIT} {COIN}/сутки, "
                  f"до {STOCK_MAX_QTY} акций одной компании, комиссия {int(STOCK_FEE * 100)}% при продаже")
@@ -381,13 +386,18 @@ async def _portfolio(update, me):
     if not rows:
         await reply(update, "Портфель пуст. Купить: «купить акции SVD 5», список: «биржа»")
         return True
-    total, lines = 0, ["💼 <b>Портфель</b>"]
-    for r in rows:
+    total, cost, lines = 0, 0, ["💼 <b>Портфель</b>"]
+    for r in sorted(rows, key=lambda r: -r["price"] * r["qty"]):
         val = int(r["price"] * r["qty"])
         total += val
+        cost += r["cost"]
         diff = val - r["cost"]
-        lines.append(f"{r['sym']} {esc(r['name'])}: {r['qty']} шт. · {val} {COIN} ({'+' if diff >= 0 else ''}{diff})")
-    lines.append(f"Всего: {total} {COIN}. Баланс: {coins_of(me.id)} {COIN}")
+        pct = diff / r["cost"] * 100 if r["cost"] else 0
+        lines.append(f"{'🟢' if diff >= 0 else '🔴'} {r['sym']} {esc(r['name'])}: {r['qty']} шт. · {val} {COIN} "
+                     f"({'+' if diff >= 0 else ''}{diff}, {pct:+.1f}%)")
+    d = total - cost
+    lines.append(f"\nВложено {cost}, сейчас {total}: <b>{'+' if d >= 0 else ''}{d}</b> {COIN} ({(d / cost * 100 if cost else 0):+.1f}%)")
+    lines.append(f"Баланс: {coins_of(me.id)} {COIN}")
     await reply(update, "\n".join(lines))
     return True
 
